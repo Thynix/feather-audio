@@ -5,6 +5,7 @@
 #include <SPI.h>
 #include <SD.h>
 #include <Adafruit_VS1053.h>
+#include <patching.h>
 
 // These are the pins used
 #define VS1053_RESET   -1     // VS1053 reset pin (not used!)
@@ -74,16 +75,17 @@ void setup() {
      while (1);
   }
 
-  Serial.println(F("VS1053 found"));
- 
-  musicPlayer.sineTest(0x44, 500);    // Make a tone to indicate VS1053 is working
-  
+  Serial.println(F("VS1053 found")); 
+
   if (!SD.begin(CARDCS)) {
     Serial.println(F("SD failed, or not present"));
     while (1);  // don't do anything more
   }
   Serial.println("SD OK!");
   
+  Serial.println("Patching VS1053");
+  musicPlayer.applyPatch(plugin, pluginSize);
+
   // list files
   printDirectory(SD.open("/"), 0);
   
