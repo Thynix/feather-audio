@@ -6,6 +6,7 @@
 #include <SD.h>
 #include <Adafruit_VS1053.h>
 #include <patching.h>
+#include <Debouncer.h>
 
 // These are the pins used
 #define VS1053_RESET   -1     // VS1053 reset pin (not used!)
@@ -55,9 +56,22 @@
 #endif
 
 void printDirectory(File dir, int numTabs);
+File getNextFile();
+File getStartingFile();
 
 Adafruit_VS1053_FilePlayer musicPlayer = 
   Adafruit_VS1053_FilePlayer(VS1053_RESET, VS1053_CS, VS1053_DCS, VS1053_DREQ, CARDCS);
+
+const uint8_t skip_pin = 14;
+const int debounce_ms = 100;
+Debouncer skipButton(debounce_ms);
+
+// There's a lot of wobble in the volume knob reading; ignore changes less than this big.
+const int adc_noise_threshold = 5;
+
+const int fileStackSize = 5;
+int fileIndex = 0;
+File fileStack[fileStackSize] = {};
 
 void setup() {
   Serial.begin(9600);
@@ -66,28 +80,27 @@ void setup() {
   //pinMode(8, INPUT_PULLUP);
 
   // Wait for serial port to be opened, remove this line for 'standalone' operation
-  while (!Serial) { delay(1); }
-  delay(500);
-  Serial.println("\n\nAdafruit VS1053 Feather Test");
-  
+  while (!Serial) { delay(10); }
+
   if (! musicPlayer.begin()) { // initialise the music player
      Serial.println(F("Couldn't find VS1053, do you have the right pins defined?"));
-     while (1);
+     while (1) delay(100);
   }
 
   Serial.println(F("VS1053 found")); 
 
   if (!SD.begin(CARDCS)) {
     Serial.println(F("SD failed, or not present"));
-    while (1);  // don't do anything more
+    while (1) delay(100);  // don't do anything more
   }
-  Serial.println("SD OK!");
+  Serial.println(F("SD OK!"));
   
-  Serial.println("Patching VS1053");
+  Serial.println(F("Patching VS1053"));
   musicPlayer.applyPatch(plugin, pluginSize);
 
   // list files
-  printDirectory(SD.open("/"), 0);
+  //printDirectory(getStartingFile(), 0);
+  fileStack[0] = getStartingFile();
   
   // Set volume for left, right channels. lower numbers == louder volume!
   musicPlayer.setVolume(255, 255);
@@ -101,9 +114,8 @@ void setup() {
   // audio playing
   musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT);  // DREQ int
 #endif
-  
-  Serial.println(F("Playing track 002"));
-  musicPlayer.startPlayingFile("/track002.mp3");
+
+  //pinMode(skip_pin, INPUT_PULLUP);
 }
 
 void loop() {
@@ -130,40 +142,34 @@ void loop() {
   musicPlayer.setVolume(volume, volume);
 
   Serial.printf("%d %f %d\n", adc, scaled_adc, volume);
-  //Serial.print(".");
-  // File is playing in the background
-  if (musicPlayer.stopped()) {
-    Serial.println("Done playing music");
-    while (1) {
-      delay(10);  // we're done! do nothing...
-    }
-  }
-  if (Serial.available()) {
-    char c = Serial.read();
-    
-    // if we get an 's' on the serial console, stop!
-    if (c == 's') {
-      musicPlayer.stopPlaying();
-    }
-    
-    // if we get an 'p' on the serial console, pause/unpause!
-    if (c == 'p') {
-      if (! musicPlayer.paused()) {
-        Serial.println("Paused");
-        musicPlayer.pausePlaying(true);
-      } else { 
-        Serial.println("Resumed");
-        musicPlayer.pausePlaying(false);
+
+  //bool button_changed = skipButton.update(digitalRead(skip_pin));
+
+  // Go to the next file when done or when the skip button is pressed.
+  if (musicPlayer.stopped()/* || (button_changed && !skipButton.get())*/) {
+    Serial.println("Next file");
+
+    do {
+      File entry = getNextFile();
+      Serial.printf("Playing %s\n", entry.fullName());
+      bool started = musicPlayer.startPlayingFile(entry.fullName());
+      entry.close();
+
+      // Try the next one on failure to start.
+      if (!started) {
+        Serial.println("Playing failed");
+        continue;
       }
-    }
+
+    } while (!musicPlayer.playingMusic);
   }
+
   delay(100);
 }
 
 /// File listing helper
 void printDirectory(File dir, int numTabs) {
    while(true) {
-     
      File entry =  dir.openNextFile();
      if (! entry) {
        // no more files
@@ -184,4 +190,51 @@ void printDirectory(File dir, int numTabs) {
      }
      entry.close();
    }
+}
+
+File getNextFile() {
+  while (true) {
+    File &directory = fileStack[fileIndex];
+    Serial.printf("Listing %s from stack index %d\n", directory.fullName(), fileIndex);
+    File entry = directory.openNextFile();
+
+    // Top of stack exhausted; pop it.
+    if (!entry) {
+      directory.close();
+
+      // Restart if at top level.
+      if (fileIndex == 0) {
+        Serial.println("Top exhausted; restarting");
+        fileStack[0] = getStartingFile();
+        continue;
+      }
+
+      Serial.printf("%s exhausted\n", fileStack[fileIndex].fullName());
+      fileIndex--;
+      continue;
+    }
+
+    // Ignore System Volume Information
+    if (!strcmp(entry.fullName(), "System Volume Information")) {
+      entry.close();
+      continue;
+    }
+
+    // If there's room to descend into a directory, do it.
+    if (entry.isDirectory()) {
+      if (fileIndex + 1 < fileStackSize) {
+        Serial.printf("Descending into %s\n", entry.fullName());
+        fileStack[++fileIndex] = entry;
+      }
+
+      // Whether descending or not, a directory isn't a file, so skip it.
+      continue;
+    }
+
+    return entry;
+  }
+}
+
+File getStartingFile() {
+  return SD.open("/");
 }
