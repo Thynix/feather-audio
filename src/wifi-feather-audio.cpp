@@ -7,64 +7,24 @@
 #include <Adafruit_VS1053.h>
 #include <patching.h>
 #include <Debouncer.h>
-
-// These are the pins used
-#define VS1053_RESET   -1     // VS1053 reset pin (not used!)
-
-// Feather ESP8266
-#if defined(ESP8266)
-  #define VS1053_CS      16     // VS1053 chip select pin (output)
-  #define VS1053_DCS     15     // VS1053 Data/command select pin (output)
-  #define CARDCS          2     // Card chip select pin
-  #define VS1053_DREQ     0     // VS1053 Data request, ideally an Interrupt pin
-
-// Feather ESP32
-#elif defined(ESP32) && !defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S2)
-  #define VS1053_CS      32     // VS1053 chip select pin (output)
-  #define VS1053_DCS     33     // VS1053 Data/command select pin (output)
-  #define CARDCS         14     // Card chip select pin
-  #define VS1053_DREQ    15     // VS1053 Data request, ideally an Interrupt pin
-
-// Feather Teensy3
-#elif defined(TEENSYDUINO)
-  #define VS1053_CS       3     // VS1053 chip select pin (output)
-  #define VS1053_DCS     10     // VS1053 Data/command select pin (output)
-  #define CARDCS          8     // Card chip select pin
-  #define VS1053_DREQ     4     // VS1053 Data request, ideally an Interrupt pin
-
-// WICED feather
-#elif defined(ARDUINO_STM32_FEATHER)
-  #define VS1053_CS       PC7     // VS1053 chip select pin (output)
-  #define VS1053_DCS      PB4     // VS1053 Data/command select pin (output)
-  #define CARDCS          PC5     // Card chip select pin
-  #define VS1053_DREQ     PA15    // VS1053 Data request, ideally an Interrupt pin
-
-#elif defined(ARDUINO_NRF52832_FEATHER )
-  #define VS1053_CS       30     // VS1053 chip select pin (output)
-  #define VS1053_DCS      11     // VS1053 Data/command select pin (output)
-  #define CARDCS          27     // Card chip select pin
-  #define VS1053_DREQ     31     // VS1053 Data request, ideally an Interrupt pin
-
-// Feather M4, M0, 328, ESP32-S2, nRF52840 or 32u4
-#else
-  #define VS1053_CS       6     // VS1053 chip select pin (output)
-  #define VS1053_DCS     10     // VS1053 Data/command select pin (output)
-  #define CARDCS          5     // Card chip select pin
-  // DREQ should be an Int pin *if possible* (not possible on 32u4)
-  #define VS1053_DREQ     9     // VS1053 Data request, ideally an Interrupt pin
-
-#endif
+#include <Wire.h>
+#include <Adafruit_seesaw.h>
+#include <seesaw_neopixel.h>
+#include <feather_pins.h>
+#include <vector>
 
 void printDirectory(File dir, int numTabs);
 File getNextFile();
 File getStartingFile();
+void populateFilenames(File dir);
 
 Adafruit_VS1053_FilePlayer musicPlayer = 
   Adafruit_VS1053_FilePlayer(VS1053_RESET, VS1053_CS, VS1053_DCS, VS1053_DREQ, CARDCS);
 
-const uint8_t skip_pin = 14;
 const int debounce_ms = 100;
-Debouncer skipButton(debounce_ms);
+Debouncer encoderButton(debounce_ms);
+
+const uint8_t volume_pin = A2;
 
 // There's a lot of wobble in the volume knob reading; ignore changes less than this big.
 const int adc_noise_threshold = 5;
@@ -72,15 +32,64 @@ const int adc_noise_threshold = 5;
 const int fileStackSize = 5;
 int fileIndex = 0;
 File fileStack[fileStackSize] = {};
+std::vector<const char*> filenames;
 
-void setup() {
+#define SS_SWITCH        24
+#define SS_NEOPIX        6
+
+#define SEESAW_ADDR          0x36
+
+Adafruit_seesaw ss;
+seesaw_NeoPixel sspixel = seesaw_NeoPixel(1, SS_NEOPIX, NEO_GRB + NEO_KHZ800);
+
+int32_t encoder_position;
+
+void setup()
+{
   Serial.begin(9600);
 
   // if you're using Bluefruit or LoRa/RFM Feather, disable the radio module
   //pinMode(8, INPUT_PULLUP);
 
-  // Wait for serial port to be opened, remove this line for 'standalone' operation
-  while (!Serial) { delay(10); }
+  pinMode(volume_pin, INPUT);
+
+  pinMode(LED_BUILTIN, OUTPUT);
+
+  // Blink while waiting for serial.
+  while (!Serial) {
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(100);
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(100);
+  }
+
+  Wire.begin();
+ 
+  if (! ss.begin(SEESAW_ADDR) || ! sspixel.begin(SEESAW_ADDR)) {
+    Serial.println("Couldn't find seesaw on default address");
+    while(true) delay(10);
+  }
+
+  uint32_t version = ((ss.getVersion() >> 16) & 0xFFFF);
+  if (version  != 4991){
+    Serial.print("Wrong firmware loaded? Instead of rotary encoder, found product #");
+    Serial.println(version);
+    while(true) delay(10);
+  }
+
+  // set not so bright!
+  sspixel.setBrightness(10);
+  sspixel.show();
+  
+  // use a pin for the built in encoder switch
+  ss.pinMode(SS_SWITCH, INPUT_PULLUP);
+
+  // get starting position
+  encoder_position = ss.getEncoderPosition();
+
+  delay(10);
+  ss.setGPIOInterrupts((uint32_t)1 << SS_SWITCH, 1);
+  ss.enableEncoderInterrupt();
 
   if (! musicPlayer.begin()) { // initialise the music player
      Serial.println(F("Couldn't find VS1053, do you have the right pins defined?"));
@@ -100,10 +109,13 @@ void setup() {
 
   // list files
   //printDirectory(getStartingFile(), 0);
-  fileStack[0] = getStartingFile();
+  //fileStack[0] = getStartingFile();
+  populateFilenames(getStartingFile());
+  filenames.shrink_to_fit();
+  Serial.printf("Found %d songs\n", filenames.size());
   
   // Set volume for left, right channels. lower numbers == louder volume!
-  musicPlayer.setVolume(255, 255);
+  musicPlayer.setVolume(100, 100);
 
 #if defined(__AVR_ATmega32U4__) 
   // Timer interrupts are not suggested, better to use DREQ interrupt!
@@ -114,12 +126,12 @@ void setup() {
   // audio playing
   musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT);  // DREQ int
 #endif
-
-  //pinMode(skip_pin, INPUT_PULLUP);
 }
 
-void loop() {
-  int adc = analogRead(A0);
+void loop()
+{
+  static bool paused = false;
+  int adc = analogRead(volume_pin);
 
   // Voltage splitter
   // 330k / 100k Ohm ideal
@@ -139,32 +151,62 @@ void loop() {
   uint8_t volume = (uint8_t) ((1.0f - scaled_adc) * 160);
 
   // Set volume for left, right channels.
-  musicPlayer.setVolume(volume, volume);
+  //musicPlayer.setVolume(volume, volume);
 
-  Serial.printf("%d %f %d\n", adc, scaled_adc, volume);
+  //Serial.printf("%d %f %d\n", adc, scaled_adc, volume);
 
-  //bool button_changed = skipButton.update(digitalRead(skip_pin));
+  // Toggle pause on encoder button press.
+  if (encoderButton.update(ss.digitalRead(SS_SWITCH)) && !encoderButton.get()) {
+    paused = !paused;
+    musicPlayer.pausePlaying(paused);
 
-  // Go to the next file when done or when the skip button is pressed.
-  if (musicPlayer.stopped()/* || (button_changed && !skipButton.get())*/) {
-    Serial.println("Next file");
+    if (paused) {
+      sspixel.setPixelColor(0, 0xff0000);
+    } else {
+      sspixel.setPixelColor(0, 0x00ff00);
+    }
+    sspixel.show();
+  } else {
 
-    do {
-      File entry = getNextFile();
-      Serial.printf("Playing %s\n", entry.fullName());
-      bool started = musicPlayer.startPlayingFile(entry.fullName());
-      entry.close();
+    auto new_position = ss.getEncoderPosition();
+    auto encoder_change = new_position - encoder_position;
+    encoder_position = new_position;
 
-      // Try the next one on failure to start.
+    // Go to the next file on startup, after completing a song, or when requested.
+    // The encoder may have moved multiple positions since the last check if
+    // moving quickly, so consider each one.
+    const char* filename = NULL;
+    if (musicPlayer.stopped() || encoder_change < 0) {
+      do {
+        Serial.println("Next file");
+
+        filename = filenames.back();
+        filenames.pop_back();
+        filenames.insert(filenames.begin(), filename);
+
+        encoder_change++;
+      } while (encoder_change < 0);
+    } else if (encoder_change > 0) {
+      do {
+        Serial.println("Previous file");
+
+        filename = filenames.front();
+        filenames.erase(filenames.begin());
+        filenames.push_back(filename);
+
+        encoder_change--;
+      } while (encoder_change > 0);
+    }
+
+    if (filename) {
+      Serial.printf("Playing %s\n", filename);
+      musicPlayer.stopPlaying();
+      bool started = musicPlayer.startPlayingFile(filename);
       if (!started) {
-        Serial.println("Playing failed");
-        continue;
+        Serial.println("Failed");
       }
-
-    } while (!musicPlayer.playingMusic);
+    }
   }
-
-  delay(100);
 }
 
 /// File listing helper
@@ -195,7 +237,7 @@ void printDirectory(File dir, int numTabs) {
 File getNextFile() {
   while (true) {
     File &directory = fileStack[fileIndex];
-    Serial.printf("Listing %s from stack index %d\n", directory.fullName(), fileIndex);
+    Serial.printf("Listing %s from stack index %d\n", directory.name(), fileIndex);
     File entry = directory.openNextFile();
 
     // Top of stack exhausted; pop it.
@@ -209,13 +251,13 @@ File getNextFile() {
         continue;
       }
 
-      Serial.printf("%s exhausted\n", fileStack[fileIndex].fullName());
+      Serial.printf("%s exhausted\n", fileStack[fileIndex].name());
       fileIndex--;
       continue;
     }
 
     // Ignore System Volume Information
-    if (!strcmp(entry.fullName(), "System Volume Information")) {
+    if (!strcmp(entry.name(), "System Volume Information")) {
       entry.close();
       continue;
     }
@@ -223,7 +265,7 @@ File getNextFile() {
     // If there's room to descend into a directory, do it.
     if (entry.isDirectory()) {
       if (fileIndex + 1 < fileStackSize) {
-        Serial.printf("Descending into %s\n", entry.fullName());
+        Serial.printf("Descending into %s\n", entry.name());
         fileStack[++fileIndex] = entry;
       }
 
@@ -237,4 +279,27 @@ File getNextFile() {
 
 File getStartingFile() {
   return SD.open("/");
+}
+
+void populateFilenames(File dir)
+{
+    while(true) {
+      File entry =  dir.openNextFile();
+      if (! entry) {
+        // no more files
+        //Serial.println("**nomorefiles**");
+        break;
+      }
+      // Duplicate so the entry can be closed.
+      char *name = (char*) malloc(strlen(entry.name()) + 1);
+      strcpy(name, entry.name());
+      filenames.push_back(name);
+
+      // Recurse if necessary.
+      if (entry.isDirectory()) {
+        populateFilenames(entry);
+      }
+
+      entry.close();
+  }
 }
