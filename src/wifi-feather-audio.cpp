@@ -167,7 +167,8 @@ void loop()
     }
     sspixel.show();
   } else {
-
+    // The encoder position doesn't have a valid reading when the button is
+    // pressed, so consider it only when the button isn't pressed.
     auto new_position = ss.getEncoderPosition();
     auto encoder_change = new_position - encoder_position;
     encoder_position = new_position;
