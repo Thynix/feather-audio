@@ -11,7 +11,9 @@
 #include <Adafruit_seesaw.h>
 #include <seesaw_neopixel.h>
 #include <feather_pins.h>
-#include <vector>
+#include <list>
+
+#define COUNT_OF(x) ((sizeof(x)/sizeof(0[x])) / ((size_t)(!(sizeof(x) % sizeof(0[x])))))
 
 void printDirectory(File dir, int numTabs);
 File getNextFile();
@@ -32,7 +34,12 @@ const int adc_noise_threshold = 5;
 const int fileStackSize = 5;
 int fileIndex = 0;
 File fileStack[fileStackSize] = {};
-std::vector<const char*> filenames;
+std::list<const char*> filenames;
+
+const char* const accepted_extensions[] = {
+  ".MP3",
+  ".OGG",
+};
 
 #define SS_SWITCH        24
 #define SS_NEOPIX        6
@@ -66,7 +73,7 @@ void setup()
   Wire.begin();
  
   if (! ss.begin(SEESAW_ADDR) || ! sspixel.begin(SEESAW_ADDR)) {
-    Serial.println("Couldn't find seesaw on default address");
+    Serial.println("Couldn't find rotary encoder");
     while(true) delay(10);
   }
 
@@ -96,22 +103,14 @@ void setup()
      while (1) delay(100);
   }
 
-  Serial.println(F("VS1053 found")); 
-
   if (!SD.begin(CARDCS)) {
     Serial.println(F("SD failed, or not present"));
     while (1) delay(100);  // don't do anything more
   }
-  Serial.println(F("SD OK!"));
-  
-  Serial.println(F("Patching VS1053"));
+
   musicPlayer.applyPatch(plugin, pluginSize);
 
-  // list files
-  //printDirectory(getStartingFile(), 0);
-  //fileStack[0] = getStartingFile();
   populateFilenames(getStartingFile());
-  filenames.shrink_to_fit();
   Serial.printf("Found %d songs\n", filenames.size());
   
   // Set volume for left, right channels. lower numbers == louder volume!
@@ -131,16 +130,12 @@ void setup()
 void loop()
 {
   static bool paused = false;
-  int adc = analogRead(volume_pin);
 
-  // Voltage splitter
-  // 330k / 100k Ohm ideal
-  // 323k / 91k Ohm measured
-  // 3.3v down to 0.725v
-  // min / max seen with given potentiometer.
-  const int adc_min = 20;
-  const int adc_max = 800;
-  float scaled_adc = (adc - adc_min) / (float) adc_max;
+  // When using a linear potentiometer, take the log to match volume perception.
+  // ADC max is 1023, and natural log of 1023 = 6.93049
+  // No need if using an audio potentiometer of course.
+  float scaled_adc = log(max(analogRead(volume_pin), 1u)) / 6.93049;
+  // float scaled_adc = analogRead(volume_pin) / 1023.0;
   if (scaled_adc < 0.0f) scaled_adc = 0.0f;
   if (scaled_adc > 1.0f) scaled_adc = 1.0f;
 
@@ -151,19 +146,20 @@ void loop()
   uint8_t volume = (uint8_t) ((1.0f - scaled_adc) * 160);
 
   // Set volume for left, right channels.
-  //musicPlayer.setVolume(volume, volume);
+  musicPlayer.setVolume(volume, volume);
 
-  //Serial.printf("%d %f %d\n", adc, scaled_adc, volume);
+  //Serial.println(volume);
 
   // Toggle pause on encoder button press.
   if (encoderButton.update(ss.digitalRead(SS_SWITCH)) && !encoderButton.get()) {
     paused = !paused;
     musicPlayer.pausePlaying(paused);
 
+    // Red if paused, otherwise off.
     if (paused) {
       sspixel.setPixelColor(0, 0xff0000);
     } else {
-      sspixel.setPixelColor(0, 0x00ff00);
+      sspixel.setPixelColor(0, 0x000000);
     }
     sspixel.show();
   } else {
@@ -181,9 +177,9 @@ void loop()
       do {
         Serial.println("Next file");
 
-        filename = filenames.back();
-        filenames.pop_back();
-        filenames.insert(filenames.begin(), filename);
+        filename = filenames.front();
+        filenames.pop_front();
+        filenames.push_back(filename);
 
         encoder_change++;
       } while (encoder_change < 0);
@@ -191,9 +187,9 @@ void loop()
       do {
         Serial.println("Previous file");
 
-        filename = filenames.front();
-        filenames.erase(filenames.begin());
-        filenames.push_back(filename);
+        filename = filenames.back();
+        filenames.pop_back();
+        filenames.push_front(filename);
 
         encoder_change--;
       } while (encoder_change > 0);
@@ -201,80 +197,18 @@ void loop()
 
     if (filename) {
       Serial.printf("Playing %s\n", filename);
+      /*
+       * TODO: playing an MP3, then while that's playing trying to switch to an OGG has silent playback. When you try to play the OGG again it works.
+       *       attempt to follow the datasheet in _datasheet_stopping broke stopping.
+       */
       musicPlayer.stopPlaying();
       bool started = musicPlayer.startPlayingFile(filename);
       if (!started) {
         Serial.println("Failed");
       }
+
+      // TODO: How to read tags to display song names?
     }
-  }
-}
-
-/// File listing helper
-void printDirectory(File dir, int numTabs) {
-   while(true) {
-     File entry =  dir.openNextFile();
-     if (! entry) {
-       // no more files
-       //Serial.println("**nomorefiles**");
-       break;
-     }
-     for (uint8_t i=0; i<numTabs; i++) {
-       Serial.print('\t');
-     }
-     Serial.print(entry.name());
-     if (entry.isDirectory()) {
-       Serial.println("/");
-       printDirectory(entry, numTabs+1);
-     } else {
-       // files have sizes, directories do not
-       Serial.print("\t\t");
-       Serial.println(entry.size(), DEC);
-     }
-     entry.close();
-   }
-}
-
-File getNextFile() {
-  while (true) {
-    File &directory = fileStack[fileIndex];
-    Serial.printf("Listing %s from stack index %d\n", directory.name(), fileIndex);
-    File entry = directory.openNextFile();
-
-    // Top of stack exhausted; pop it.
-    if (!entry) {
-      directory.close();
-
-      // Restart if at top level.
-      if (fileIndex == 0) {
-        Serial.println("Top exhausted; restarting");
-        fileStack[0] = getStartingFile();
-        continue;
-      }
-
-      Serial.printf("%s exhausted\n", fileStack[fileIndex].name());
-      fileIndex--;
-      continue;
-    }
-
-    // Ignore System Volume Information
-    if (!strcmp(entry.name(), "System Volume Information")) {
-      entry.close();
-      continue;
-    }
-
-    // If there's room to descend into a directory, do it.
-    if (entry.isDirectory()) {
-      if (fileIndex + 1 < fileStackSize) {
-        Serial.printf("Descending into %s\n", entry.name());
-        fileStack[++fileIndex] = entry;
-      }
-
-      // Whether descending or not, a directory isn't a file, so skip it.
-      continue;
-    }
-
-    return entry;
   }
 }
 
@@ -286,20 +220,31 @@ void populateFilenames(File dir)
 {
     while(true) {
       File entry =  dir.openNextFile();
-      if (! entry) {
+      if (!entry) {
         // no more files
-        //Serial.println("**nomorefiles**");
         break;
       }
-      // Duplicate so the entry can be closed.
-      char *name = (char*) malloc(strlen(entry.name()) + 1);
-      strcpy(name, entry.name());
-      filenames.push_back(name);
 
       // Recurse if necessary.
       if (entry.isDirectory()) {
         populateFilenames(entry);
       }
+
+      for (size_t i = 0; i < COUNT_OF(accepted_extensions); i++) {
+        if (strstr(entry.name(), accepted_extensions[i])) {
+          goto accept_entry;
+        }
+      }
+
+      // Ignore it if it doesn't have a usable extension.
+      entry.close();
+      continue;
+
+accept_entry:
+      // Duplicate so the entry can be closed.
+      char *name = (char*) malloc(strlen(entry.name()) + 1);
+      strcpy(name, entry.name());
+      filenames.push_back(name);
 
       entry.close();
   }
