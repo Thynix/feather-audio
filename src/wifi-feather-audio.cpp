@@ -1,6 +1,3 @@
-// Specifically for use with the Adafruit Feather, the pins are pre-set here!
-
-// include SPI, MP3 and SD libraries
 #include <Arduino.h>
 #include <SPI.h>
 #include <SD.h>
@@ -10,8 +7,11 @@
 #include <Wire.h>
 #include <Adafruit_seesaw.h>
 #include <seesaw_neopixel.h>
+// Specifically for use with the Adafruit M0 Feather, the pins are pre-set here!
 #include <feather_pins.h>
-#include <list>
+#include <vector>
+#define MP3_ID3_TAGS_IMPLEMENTATION
+#include <mp3_id3_tags.h>
 
 #define COUNT_OF(x) ((sizeof(x)/sizeof(0[x])) / ((size_t)(!(sizeof(x) % sizeof(0[x])))))
 
@@ -27,6 +27,7 @@ const int debounce_ms = 100;
 Debouncer encoderButton(debounce_ms);
 
 const uint8_t volume_pin = A2;
+const uint8_t wait_for_serial_pin = A3;
 
 // There's a lot of wobble in the volume knob reading; ignore changes less than this big.
 const int adc_noise_threshold = 5;
@@ -34,11 +35,12 @@ const int adc_noise_threshold = 5;
 const int fileStackSize = 5;
 int fileIndex = 0;
 File fileStack[fileStackSize] = {};
-std::list<const char*> filenames;
+std::vector<const char*> filenames;
 
 const char* const accepted_extensions[] = {
   ".MP3",
   ".OGG",
+  ".FLA",
 };
 
 #define SS_SWITCH        24
@@ -59,11 +61,12 @@ void setup()
   //pinMode(8, INPUT_PULLUP);
 
   pinMode(volume_pin, INPUT);
+  pinMode(wait_for_serial_pin, INPUT_PULLUP);
 
   pinMode(LED_BUILTIN, OUTPUT);
 
-  // Blink while waiting for serial.
-  while (!Serial) {
+  // Blink while waiting for serial, but don't wait if the switch is set.
+  while (!Serial && digitalRead(wait_for_serial_pin)) {
     digitalWrite(LED_BUILTIN, HIGH);
     delay(100);
     digitalWrite(LED_BUILTIN, LOW);
@@ -110,7 +113,10 @@ void setup()
 
   musicPlayer.applyPatch(plugin, pluginSize);
 
-  populateFilenames(getStartingFile());
+  Serial.println("Searching for songs");
+  File root = SD.open("/");
+  populateFilenames(root);
+  root.close();
   Serial.printf("Found %d songs\n", filenames.size());
   
   // Set volume for left, right channels. lower numbers == louder volume!
@@ -130,6 +136,8 @@ void setup()
 void loop()
 {
   static bool paused = false;
+  static int file_index = 0;
+  mp3_id3_tags tags;
 
   // When using a linear potentiometer, take the log to match volume perception.
   // ADC max is 1023, and natural log of 1023 = 6.93049
@@ -157,8 +165,10 @@ void loop()
 
     // Red if paused, otherwise off.
     if (paused) {
+      Serial.println("Pause");
       sspixel.setPixelColor(0, 0xff0000);
     } else {
+      Serial.println("Resume");
       sspixel.setPixelColor(0, 0x000000);
     }
     sspixel.show();
@@ -174,29 +184,48 @@ void loop()
     // moving quickly, so consider each one.
     const char* filename = NULL;
     if (musicPlayer.stopped() || encoder_change < 0) {
+      Serial.print("Next ");
       do {
-        Serial.println("Next file");
+        filename = filenames[file_index];
+        file_index++;
+        if ((size_t) file_index >= filenames.size()) {
+          file_index = 0;
+        }
 
-        filename = filenames.front();
-        filenames.pop_front();
-        filenames.push_back(filename);
+        Serial.print(encoder_change);
+        Serial.print(' ');
 
         encoder_change++;
       } while (encoder_change < 0);
+      Serial.println();
     } else if (encoder_change > 0) {
-      do {
-        Serial.println("Previous file");
+      Serial.print("Previous ");
+      do {        
+        filename = filenames[file_index];
+        file_index--;
+        if (file_index < 0) {
+          file_index = filenames.size() - 1;
+        }
 
-        filename = filenames.back();
-        filenames.pop_back();
-        filenames.push_front(filename);
+        Serial.print(encoder_change);
+        Serial.print(' ');
 
         encoder_change--;
       } while (encoder_change > 0);
+      Serial.println();
     }
 
     if (filename) {
+      /*
+      File file = SD.open(filename);
+      if (mp3_id3_file_read_tags(&file, &tags)) {
+        Serial.printf("Playing %s from %s by %s\n", tags.title, tags.album, tags.artist);
+      } else {
+        Serial.printf("Playing %s\n", filename);
+      }
+      file.close();*/
       Serial.printf("Playing %s\n", filename);
+
       /*
        * TODO: playing an MP3, then while that's playing trying to switch to an OGG has silent playback. When you try to play the OGG again it works.
        *       attempt to follow the datasheet in _datasheet_stopping broke stopping.
@@ -206,14 +235,8 @@ void loop()
       if (!started) {
         Serial.println("Failed");
       }
-
-      // TODO: How to read tags to display song names?
     }
   }
-}
-
-File getStartingFile() {
-  return SD.open("/");
 }
 
 void populateFilenames(File dir)
@@ -228,8 +251,11 @@ void populateFilenames(File dir)
       // Recurse if necessary.
       if (entry.isDirectory()) {
         populateFilenames(entry);
+        entry.close();
+        continue;
       }
 
+      // Check whether it's a supported extension. (MP3 is best supported.)
       for (size_t i = 0; i < COUNT_OF(accepted_extensions); i++) {
         if (strstr(entry.name(), accepted_extensions[i])) {
           goto accept_entry;

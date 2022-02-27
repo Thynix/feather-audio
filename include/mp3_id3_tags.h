@@ -64,7 +64,7 @@ Revision history:
 //     }
 // 
 
-#include <stdio.h> // for fclose, fopen, fread, fseek
+#include <SD.h> // for SDLib::File
 #include <string.h> // for malloc, strncmp, strcpy, strncpy
 
 enum
@@ -97,17 +97,15 @@ typedef struct
 
 } mp3_id3_tags;
 
-int mp3_id3_has_tags(const char *fileName);
-int mp3_id3_file_has_tags(FILE *f);
+int mp3_id3_file_has_tags(SDLib::File *f);
 
-char *mp3_id3_read_tag(const char *fileName, int tagId);
-char *mp3_id3_file_read_tag(FILE *f, int tagId);
+char *mp3_id3_file_read_tag(SDLib::File *f, int tagId);
 
-int mp3_id3_read_tags(const char *fileName, mp3_id3_tags *tags);
-int mp3_id3_file_read_tags(FILE *f, mp3_id3_tags *tags);
+int mp3_id3_file_read_tags(SDLib::File *f, mp3_id3_tags *tags);
 
 #endif // _MP3_ID3_TAGS_H
 
+#define MP3_ID3_TAGS_IMPLEMENTATION
 #ifdef MP3_ID3_TAGS_IMPLEMENTATION
 
 #ifdef MP3_ID3_TAGS_USE_GENRES
@@ -159,154 +157,116 @@ const char *mp3_id3_genres[MP3_ID3_TAGS_GENRE_COUNT] =
 
 #endif // MP3_ID3_TAGS_USE_GENRES
 
-int mp3_id3_has_tags(const char *fileName)
+int __mp3_read_tags(SDLib::File *, char *);
+
+int mp3_id3_file_has_tags(SDLib::File *f)
 {
 
-    FILE *f = fopen(fileName, "rb");
-
-    int ret = mp3_id3_file_has_tags(f);
-
-    fclose(f);
-
-    return ret;
-
-}
-
-int mp3_id3_file_has_tags(FILE *f)
-{
-
-    if (!f)
+    if (!f) {
+        Serial.println("File is NULL");
         return 0;
-    else
-    {
-
-        char id3[128];
-        if (fseek(f, -128, SEEK_END) || fread(id3, sizeof(char), 128, f) < 128)
-            return 0;
-
-        if (strncmp(id3, "TAG", 3))
-            return 0;
-        else
-            return 1;
-
     }
 
+    char id3[128];
+    if (__mp3_read_tags(f, id3)) {
+        Serial.println("Read failed");
+        return 0;
+    }
+
+    return strncmp(id3, "TAG", 3) ? 0 : 1;
 }
 
-char *mp3_id3_read_tag(const char *fileName, int tagId)
+char *mp3_id3_file_read_tag(SDLib::File *f, int tagId)
 {
 
-    FILE *f = fopen(fileName, "rb");
-
-    char *ret = mp3_id3_file_read_tag(f, tagId);
-
-    fclose(f);
-
-    return ret;
-
-}
-
-char *mp3_id3_file_read_tag(FILE *f, int tagId)
-{
-
-    if (!f)
+    if (!f) {
         return NULL;
-    else if (!mp3_id3_file_has_tags(f))
+    } else if (!mp3_id3_file_has_tags(f)) {
+        return NULL;
+    }
+
+    char id3[128];
+
+    if (__mp3_read_tags(f, id3))
+        return 0;
+    
+    char *ptr = id3 + 3 + tagId;
+    
+    size_t sz = (tagId == MP3_ID3_TAG_YEAR) ? 5 : 31;
+    char *str = (char*) malloc(sizeof(char) * sz);
+
+    if (!str)
         return NULL;
     else
     {
 
-        char id3[128];
+        strncpy(str, ptr, sz - 1);
+        str[sz - 1] = '\0';
 
-        if (fseek(f, -128, SEEK_END) || fread(id3, sizeof(char), 128, f) < 128)
-            return 0;
-        
-        unsigned char *ptr = id3 + 3 + tagId;
-        
-        size_t sz = (tagId == MP3_ID3_TAG_YEAR) ? 5 : 31;
-        char *str = (char*) malloc(sizeof(char) * sz);
-
-        if (!str)
-            return NULL;
-        else
-        {
-
-            strncpy(str, ptr, sz - 1);
-            str[sz - 1] = '\0';
-
-            return str;
-
-        }
+        return str;
 
     }
-
 }
 
-int mp3_id3_read_tags(const char *fileName, mp3_id3_tags *tags)
+int mp3_id3_file_read_tags(SDLib::File *f, mp3_id3_tags *tags)
 {
 
-    FILE *f = fopen(fileName, "rb");
-
-    int ret = mp3_id3_file_read_tags(f, tags);
-
-    fclose(f);
-
-    return ret;
-
-}
-
-int mp3_id3_file_read_tags(FILE *f, mp3_id3_tags *tags)
-{
-
-    if (!f)
+    if (!f) {
+        Serial.println("File is NULL");
         return 0;
-    else if (!mp3_id3_file_has_tags(f))
+    } else if (!mp3_id3_file_has_tags(f)) {
+        Serial.println("No tags");
         return 0;
-    else if (!tags)
+    } else if (!tags) {
+        Serial.println("Destination struct is NULL");
         return 0;
+    }
+
+    char id3[128];
+
+    if (__mp3_read_tags(f, id3)) {
+        Serial.println("Read failed");
+        return 0;
+    }
+
+    char *ptr = id3 + 3;
+
+    strncpy(tags->title, ptr, 30);
+    tags->title[30] = '\0';
+    ptr += 30;
+
+    strncpy(tags->artist, ptr, 30);
+    tags->artist[30] = '\0';
+    ptr += 30;
+
+    strncpy(tags->album, ptr, 30);
+    tags->album[30] = '\0';
+    ptr += 30;
+
+    strncpy(tags->year, ptr, 4);
+    tags->year[4] = '\0';
+    ptr += 4;
+
+    strncpy(tags->comment, ptr, 30);
+    tags->comment[30] = '\0';
+    ptr += 30;
+
+    #ifdef MP3_ID3_TAGS_USE_GENRES
+
+    if (*ptr >= MP3_ID3_TAGS_GENRE_COUNT)
+        strcpy(tags->genre, "Unknown");
     else
-    {
+        strcpy(tags->genre, mp3_id3_genres[*ptr]);
 
-        char id3[128];
+    #endif // MP3_ID3_TAGS_USE_GENRES
 
-        if (fseek(f, -128, SEEK_END) || fread(id3, sizeof(char), 128, f) < 128)
-            return 0;
+    return 1;
+}
 
-        unsigned char *ptr = id3 + 3;
-
-        strncpy(tags->title, ptr, 30);
-        tags->title[30] = '\0';
-        ptr += 30;
-
-        strncpy(tags->artist, ptr, 30);
-        tags->artist[30] = '\0';
-        ptr += 30;
-
-        strncpy(tags->album, ptr, 30);
-        tags->album[30] = '\0';
-        ptr += 30;
-
-        strncpy(tags->year, ptr, 4);
-        tags->year[4] = '\0';
-        ptr += 4;
-
-        strncpy(tags->comment, ptr, 30);
-        tags->comment[30] = '\0';
-        ptr += 30;
-
-        #ifdef MP3_ID3_TAGS_USE_GENRES
-
-        if (*ptr >= MP3_ID3_TAGS_GENRE_COUNT)
-            strcpy(tags->genre, "Unknown");
-        else
-            strcpy(tags->genre, mp3_id3_genres[*ptr]);
-
-        #endif // MP3_ID3_TAGS_USE_GENRES
-
-        return 1;
-
-    }
-
+int __mp3_read_tags(SDLib::File *f, char *buffer)
+{
+    // -1 to go from size() to last byte.
+    return (!f->seek(f->size() - 128) || f->readBytes(buffer, 128) < 128);
 }
 
 #endif // MP3_ID3_TAGS_IMPLEMENTATION
