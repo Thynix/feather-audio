@@ -266,7 +266,20 @@ int mp3_id3_file_read_tags(SDLib::File *f, mp3_id3_tags *tags)
 int __mp3_read_tags(SDLib::File *f, char *buffer)
 {
     // -1 to go from size() to last byte.
-    return (!f->seek(f->size() - 128) || f->readBytes(buffer, 128) < 128);
+    if (!f->seek(f->size()  - 128)) {
+        Serial.println("seek failed");
+        return 1;
+    }
+
+    size_t bytes_read = f->readBytes(buffer, 128);
+    if (bytes_read < 128) {
+        Serial.print("Underread: only got ");
+        Serial.println(bytes_read);
+
+        return 1;
+    }
+
+    return 0;
 }
 
 #endif // MP3_ID3_TAGS_IMPLEMENTATION

@@ -237,7 +237,10 @@ void loop()
 
     if (filename) {
       File file = SD.open(filename);
-      if (mp3_id3_file_read_tags(&file, &tags)) {
+
+      if (!file) {
+        Serial.println("Open failed");
+      } else if (mp3_id3_file_read_tags(&file, &tags)) {
         Serial.print("Playing "); Serial.print(tags.title); Serial.print(" from ");
         Serial.print(tags.album); Serial.print(" by "); Serial.print(tags.artist);
         Serial.println();
@@ -245,8 +248,8 @@ void loop()
       } else {
         Serial.printf("Playing %s\r\n", filename);
       }
+
       file.close();
-      //Serial.printf("Playing %s\r\n", filename);
 
       /*
        * TODO: playing an MP3, then while that's playing trying to switch to an OGG has silent playback. When you try to play the OGG again it works.
