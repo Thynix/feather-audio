@@ -15,10 +15,8 @@
 
 #define COUNT_OF(x) ((sizeof(x)/sizeof(0[x])) / ((size_t)(!(sizeof(x) % sizeof(0[x])))))
 
-void printDirectory(File dir, int numTabs);
-File getNextFile();
-File getStartingFile();
-void populateFilenames(File dir);
+void populateFilenames(File);
+void blinkCode(const int *);
 
 Adafruit_VS1053_FilePlayer musicPlayer = 
   Adafruit_VS1053_FilePlayer(VS1053_RESET, VS1053_CS, VS1053_DCS, VS1053_DREQ, CARDCS);
@@ -53,6 +51,15 @@ seesaw_NeoPixel sspixel = seesaw_NeoPixel(1, SS_NEOPIX, NEO_GRB + NEO_KHZ800);
 
 int32_t encoder_position;
 
+const int short_blink_ms = 100;
+const int long_blink_ms = 500;
+const int after_pattern_ms = 1500;
+
+const int no_seesaw[] = {long_blink_ms, short_blink_ms, short_blink_ms, long_blink_ms, 0};
+const int wrong_seesaw[] = {long_blink_ms, long_blink_ms, short_blink_ms, long_blink_ms, 0};
+const int no_VS1053[] = {short_blink_ms, short_blink_ms, long_blink_ms, long_blink_ms, 0};
+const int no_microsd[] = {short_blink_ms, long_blink_ms, 0};
+
 void setup()
 {
   Serial.begin(9600);
@@ -63,28 +70,37 @@ void setup()
   pinMode(volume_pin, INPUT);
   pinMode(wait_for_serial_pin, INPUT_PULLUP);
 
+  // Keep LED on during startup.
   pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH);
 
   // Blink while waiting for serial, but don't wait if the switch is set.
+  // Blink code: short on, short off
   while (!Serial && digitalRead(wait_for_serial_pin)) {
-    digitalWrite(LED_BUILTIN, HIGH);
-    delay(100);
     digitalWrite(LED_BUILTIN, LOW);
+    delay(100);
+    digitalWrite(LED_BUILTIN, HIGH);
     delay(100);
   }
 
   Wire.begin();
  
+  // Search for Seesaw device.
+  // On failure, blink code: long off, short on, short off, long on
   if (! ss.begin(SEESAW_ADDR) || ! sspixel.begin(SEESAW_ADDR)) {
     Serial.println("Couldn't find rotary encoder");
-    while(true) delay(10);
+
+    while(true) blinkCode(no_seesaw);
   }
 
+  // Check that found device is a rotary encoder.
+  // On failure, blink code: long off, long on, short off, long on
   uint32_t version = ((ss.getVersion() >> 16) & 0xFFFF);
   if (version  != 4991){
     Serial.print("Wrong firmware loaded? Instead of rotary encoder, found product #");
     Serial.println(version);
-    while(true) delay(10);
+
+    while(true) blinkCode(wrong_seesaw);
   }
 
   // set not so bright!
@@ -101,14 +117,18 @@ void setup()
   ss.setGPIOInterrupts((uint32_t)1 << SS_SWITCH, 1);
   ss.enableEncoderInterrupt();
 
-  if (! musicPlayer.begin()) { // initialise the music player
-     Serial.println(F("Couldn't find VS1053, do you have the right pins defined?"));
-     while (1) delay(100);
+  // Initialize music player. On failure, blink code: short off, short on, long off, long on
+  if (! musicPlayer.begin()) {
+    Serial.println(F("Couldn't find VS1053, do you have the right pins defined?"));
+
+    while (true) blinkCode(no_VS1053);
   }
 
+  // Initialize SD card. On failure, blink code: short off, long on
   if (!SD.begin(CARDCS)) {
-    Serial.println(F("SD failed, or not present"));
-    while (1) delay(100);  // don't do anything more
+    Serial.println(F("MicroSD failed, or not present"));
+
+    while (true) blinkCode(no_microsd);
   }
 
   musicPlayer.applyPatch(plugin, pluginSize);
@@ -117,10 +137,7 @@ void setup()
   File root = SD.open("/");
   populateFilenames(root);
   root.close();
-  Serial.printf("Found %d songs\n", filenames.size());
-  
-  // Set volume for left, right channels. lower numbers == louder volume!
-  musicPlayer.setVolume(100, 100);
+  Serial.printf("Found %d songs\r\n", filenames.size());
 
 #if defined(__AVR_ATmega32U4__) 
   // Timer interrupts are not suggested, better to use DREQ interrupt!
@@ -131,13 +148,16 @@ void setup()
   // audio playing
   musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT);  // DREQ int
 #endif
+
+  // Turn LED off now that startup is complete.
+  digitalWrite(LED_BUILTIN, LOW);
 }
 
 void loop()
 {
   static bool paused = false;
   static int file_index = 0;
-  mp3_id3_tags tags;
+  mp3_id3_tags tags = {};
 
   // When using a linear potentiometer, take the log to match volume perception.
   // ADC max is 1023, and natural log of 1023 = 6.93049
@@ -216,15 +236,17 @@ void loop()
     }
 
     if (filename) {
-      /*
       File file = SD.open(filename);
       if (mp3_id3_file_read_tags(&file, &tags)) {
-        Serial.printf("Playing %s from %s by %s\n", tags.title, tags.album, tags.artist);
+        Serial.print("Playing "); Serial.print(tags.title); Serial.print(" from ");
+        Serial.print(tags.album); Serial.print(" by "); Serial.print(tags.artist);
+        Serial.println();
+        //Serial.printf("Playing %s from %s by %s\r\n", tags.title, tags.album, tags.artist);
       } else {
-        Serial.printf("Playing %s\n", filename);
+        Serial.printf("Playing %s\r\n", filename);
       }
-      file.close();*/
-      Serial.printf("Playing %s\n", filename);
+      file.close();
+      //Serial.printf("Playing %s\r\n", filename);
 
       /*
        * TODO: playing an MP3, then while that's playing trying to switch to an OGG has silent playback. When you try to play the OGG again it works.
@@ -274,4 +296,18 @@ accept_entry:
 
       entry.close();
   }
+}
+
+void blinkCode(const int *delays)
+{
+  // Blink (odd on, even off) until encountering 0 length terminator.
+  for (int i = 0; delays[i]; i++) {
+    if (i % 2) digitalWrite(LED_BUILTIN, HIGH);
+    else       digitalWrite(LED_BUILTIN, LOW);
+
+    delay(delays[i]);
+  }
+
+  digitalWrite(LED_BUILTIN, LOW);
+  delay(after_pattern_ms);
 }
