@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include <SPI.h>
-#include <SD.h>
+#include <SdFat.h>
 #include <Adafruit_VS1053.h>
 #include <patching.h>
 #include <Debouncer.h>
@@ -10,10 +10,38 @@
 // Specifically for use with the Adafruit M0 Feather, the pins are pre-set here!
 #include <feather_pins.h>
 #include <vector>
-#define MP3_ID3_TAGS_IMPLEMENTATION
-#include <mp3_id3_tags.h>
 
 #define COUNT_OF(x) ((sizeof(x)/sizeof(0[x])) / ((size_t)(!(sizeof(x) % sizeof(0[x])))))
+
+// SD_FAT_TYPE = 0 for SdFat/File as defined in SdFatConfig.h,
+// 1 for FAT16/FAT32, 2 for exFAT, 3 for FAT16/FAT32 and exFAT.
+#define SD_FAT_TYPE 3
+//
+// Set DISABLE_CHIP_SELECT to disable a second SPI device.
+// For example, with the Ethernet shield, set DISABLE_CHIP_SELECT
+// to 10 to disable the Ethernet controller.
+const int8_t DISABLE_CHIP_SELECT = -1;
+//
+// Test with reduced SPI speed for breadboards.  SD_SCK_MHZ(4) will select
+// the highest speed supported by the board that is not over 4 MHz.
+// Change SPI_SPEED to SD_SCK_MHZ(50) for best performance.
+#define SPI_SPEED SD_SCK_MHZ(4)
+//------------------------------------------------------------------------------
+#if SD_FAT_TYPE == 0
+SdFat sd;
+File file;
+#elif SD_FAT_TYPE == 1
+SdFat32 sd;
+File32 file;
+#elif SD_FAT_TYPE == 2
+SdExFat sd;
+ExFile file;
+#elif SD_FAT_TYPE == 3
+SdFs sd;
+FsFile file;
+#else  // SD_FAT_TYPE
+#error Invalid SD_FAT_TYPE
+#endif  // SD_FAT_TYPE
 
 void populateFilenames(File);
 void blinkCode(const int *);
@@ -36,9 +64,9 @@ File fileStack[fileStackSize] = {};
 std::vector<const char*> filenames;
 
 const char* const accepted_extensions[] = {
-  ".MP3",
-  ".OGG",
-  ".FLA",
+  ".MP3", ".mp3",
+  ".OGG", ".ogg",
+  ".FLA", ".fla",
 };
 
 #define SS_SWITCH        24
@@ -125,7 +153,7 @@ void setup()
   }
 
   // Initialize SD card. On failure, blink code: short off, long on
-  if (!SD.begin(CARDCS)) {
+  if (!sd.begin(CARDCS, SPI_SPEED)) {
     Serial.println(F("MicroSD failed, or not present"));
 
     while (true) blinkCode(no_microsd);
@@ -133,11 +161,17 @@ void setup()
 
   musicPlayer.applyPatch(plugin, pluginSize);
 
-  Serial.println("Searching for songs");
-  File root = SD.open("/");
+  Serial.println(F("Searching for songs"));
+  File root = sd.open("/");
   populateFilenames(root);
   root.close();
   Serial.printf("Found %d songs\r\n", filenames.size());
+
+  if (filenames.size() == 0) {
+    Serial.println(F("No songs found"));
+
+    while (true) blinkCode(no_microsd);
+  }
 
 #if defined(__AVR_ATmega32U4__)
   // Timer interrupts are not suggested, better to use DREQ interrupt!
@@ -157,7 +191,6 @@ void loop()
 {
   static bool paused = false;
   static int file_index = 0;
-  mp3_id3_tags tags = {};
 
   // When using a linear potentiometer, take the log to match volume perception.
   // ADC max is 1023, and natural log of 1023 = 6.93049
@@ -192,7 +225,7 @@ void loop()
       sspixel.setPixelColor(0, 0x000000);
     }
     sspixel.show();
-  } else {
+  } else if (!paused) {
     // The encoder position doesn't have a valid reading when the button is
     // pressed, so consider it only when the button isn't pressed.
     auto new_position = ss.getEncoderPosition();
@@ -236,15 +269,13 @@ void loop()
     }
 
     if (filename) {
-      File file = SD.open(filename);
-
-      if (!file) {
-        Serial.println("Open failed");
-      } else if (mp3_id3_file_read_tags(&file, &tags)) {
-        Serial.print("Playing "); Serial.print(tags.title); Serial.print(" from ");
-        Serial.print(tags.album); Serial.print(" by "); Serial.print(tags.artist);
-        Serial.println();
-        //Serial.printf("Playing %s from %s by %s\r\n", tags.title, tags.album, tags.artist);
+      if (!file.open(filename)) {
+        uint8_t errorCode = file.getError();
+        Serial.printf("Opening \"%s\" failed (%#0x - ", filename, (int) errorCode);
+        printSdErrorSymbol(&Serial, errorCode);
+        Serial.print(" - ");
+        printSdErrorText(&Serial, errorCode);
+        Serial.println(")");
       } else {
         Serial.printf("Playing %s\r\n", filename);
       }
@@ -256,14 +287,16 @@ void loop()
        *       attempt to follow the datasheet in _datasheet_stopping broke stopping.
        */
       musicPlayer.stopPlaying();
-      while (!musicPlayer.startPlayingFile(filename)) {
+      while (!musicPlayer.startPlayingFile(filename, &sd)) {
         Serial.println("Start failed");
-        delay(100); 
-        SD.end();
-        if (SD.begin(CARDCS)) {
+
+        sd.end();
+        if (sd.begin(CARDCS, SPI_SPEED)) {
           Serial.println("SD card reinitialized.");
         } else {
           Serial.println("Failed to reinitialize SD card.");
+          Serial.println(sd.card()->errorCode());
+          Serial.println(sd.card()->errorData());
         }
       }
     }
@@ -286,9 +319,18 @@ void populateFilenames(File dir)
         continue;
       }
 
+      char nameBuf[33] = {};
+      entry.getName(nameBuf, sizeof(nameBuf));
+
+      /*
+      Serial.print("Found \"");
+      Serial.print(nameBuf);
+      Serial.println("\"");
+      */
+
       // Check whether it's a supported extension. (MP3 is best supported.)
       for (size_t i = 0; i < COUNT_OF(accepted_extensions); i++) {
-        if (strstr(entry.name(), accepted_extensions[i])) {
+        if (strstr(nameBuf, accepted_extensions[i])) {
           goto accept_entry;
         }
       }
@@ -299,8 +341,8 @@ void populateFilenames(File dir)
 
 accept_entry:
       // Duplicate so the entry can be closed.
-      char *name = (char*) malloc(strlen(entry.name()) + 1);
-      strcpy(name, entry.name());
+      char *name = (char*) malloc(strlen(nameBuf) + 1);
+      strcpy(name, nameBuf);
       filenames.push_back(name);
 
       entry.close();
