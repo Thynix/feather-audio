@@ -18,7 +18,7 @@
 void populateFilenames(File);
 void blinkCode(const int *);
 
-Adafruit_VS1053_FilePlayer musicPlayer = 
+Adafruit_VS1053_FilePlayer musicPlayer =
   Adafruit_VS1053_FilePlayer(VS1053_RESET, VS1053_CS, VS1053_DCS, VS1053_DREQ, CARDCS);
 
 const int debounce_ms = 100;
@@ -84,7 +84,7 @@ void setup()
   }
 
   Wire.begin();
- 
+
   // Search for Seesaw device.
   // On failure, blink code: long off, short on, short off, long on
   if (! ss.begin(SEESAW_ADDR) || ! sspixel.begin(SEESAW_ADDR)) {
@@ -106,7 +106,7 @@ void setup()
   // set not so bright!
   sspixel.setBrightness(10);
   sspixel.show();
-  
+
   // use a pin for the built in encoder switch
   ss.pinMode(SS_SWITCH, INPUT_PULLUP);
 
@@ -139,7 +139,7 @@ void setup()
   root.close();
   Serial.printf("Found %d songs\r\n", filenames.size());
 
-#if defined(__AVR_ATmega32U4__) 
+#if defined(__AVR_ATmega32U4__)
   // Timer interrupts are not suggested, better to use DREQ interrupt!
   // but we don't have them on the 32u4 feather...
   musicPlayer.useInterrupt(VS1053_FILEPLAYER_TIMER0_INT); // timer int
@@ -220,7 +220,7 @@ void loop()
       Serial.println();
     } else if (encoder_change > 0) {
       Serial.print("Previous ");
-      do {        
+      do {
         filename = filenames[file_index];
         file_index--;
         if (file_index < 0) {
@@ -256,9 +256,15 @@ void loop()
        *       attempt to follow the datasheet in _datasheet_stopping broke stopping.
        */
       musicPlayer.stopPlaying();
-      bool started = musicPlayer.startPlayingFile(filename);
-      if (!started) {
-        Serial.println("Failed");
+      while (!musicPlayer.startPlayingFile(filename)) {
+        Serial.println("Start failed");
+        delay(100); 
+        SD.end();
+        if (SD.begin(CARDCS)) {
+          Serial.println("SD card reinitialized.");
+        } else {
+          Serial.println("Failed to reinitialize SD card.");
+        }
       }
     }
   }
