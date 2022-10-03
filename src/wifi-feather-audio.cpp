@@ -107,9 +107,9 @@ void setup()
   // Blink code: short on, short off
   while (!Serial && !digitalRead(wait_for_serial_pin)) {
     digitalWrite(LED_BUILTIN, LOW);
-    delay(100);
+    delay(short_blink_ms);
     digitalWrite(LED_BUILTIN, HIGH);
-    delay(100);
+    delay(short_blink_ms);
   }
 
   Wire.begin();
