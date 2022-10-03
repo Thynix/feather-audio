@@ -53,7 +53,8 @@ const int debounce_ms = 100;
 Debouncer encoderButton(debounce_ms);
 
 const uint8_t volume_pin = A2;
-const uint8_t wait_for_serial_pin = A3;
+// Feather M4 button A
+const uint8_t wait_for_serial_pin = 9;
 
 // There's a lot of wobble in the volume knob reading; ignore changes less than this big.
 const int adc_noise_threshold = 5;
@@ -102,9 +103,9 @@ void setup()
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
 
-  // Blink while waiting for serial, but don't wait if the switch is set.
+  // Blink while waiting for serial while button A is held.
   // Blink code: short on, short off
-  while (!Serial && digitalRead(wait_for_serial_pin)) {
+  while (!Serial && !digitalRead(wait_for_serial_pin)) {
     digitalWrite(LED_BUILTIN, LOW);
     delay(100);
     digitalWrite(LED_BUILTIN, HIGH);
