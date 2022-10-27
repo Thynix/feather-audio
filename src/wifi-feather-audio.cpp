@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include <SPI.h>
-#include <SdFat.h>
+#include <SD.h>
 #include <Adafruit_VS1053.h>
 #include <patching.h>
 #include <Debouncer.h>
@@ -10,39 +10,11 @@
 #include <feather_pins.h>
 #include <vector>
 #include <display.h>
-#include <id3tag.h>
+//#include <id3tag.h>
 
 #define COUNT_OF(x) ((sizeof(x)/sizeof(0[x])) / ((size_t)(!(sizeof(x) % sizeof(0[x])))))
 
-// SD_FAT_TYPE = 0 for SdFat/File as defined in SdFatConfig.h,
-// 1 for FAT16/FAT32, 2 for exFAT, 3 for FAT16/FAT32 and exFAT.
-#define SD_FAT_TYPE 3
-//
-// Set DISABLE_CHIP_SELECT to disable a second SPI device.
-// For example, with the Ethernet shield, set DISABLE_CHIP_SELECT
-// to 10 to disable the Ethernet controller.
-const int8_t DISABLE_CHIP_SELECT = -1;
-//
-// Test with reduced SPI speed for breadboards.  SD_SCK_MHZ(4) will select
-// the highest speed supported by the board that is not over 4 MHz.
-// Change SPI_SPEED to SD_SCK_MHZ(50) for best performance.
-#define SPI_SPEED SD_SCK_MHZ(4)
-//------------------------------------------------------------------------------
-#if SD_FAT_TYPE == 0
-SdFat sd;
 File file;
-#elif SD_FAT_TYPE == 1
-SdFat32 sd;
-File32 file;
-#elif SD_FAT_TYPE == 2
-SdExFat sd;
-ExFile file;
-#elif SD_FAT_TYPE == 3
-SdFs sd;
-FsFile file;
-#else  // SD_FAT_TYPE
-#error Invalid SD_FAT_TYPE
-#endif  // SD_FAT_TYPE
 
 void populateFilenames(File);
 void blinkCode(const int *);
@@ -163,7 +135,7 @@ void setup()
   }
 
   // Initialize SD card. On failure, blink code: short off, long on
-  if (!sd.begin(CARDCS, SPI_SPEED)) {
+  if (!SD.begin(CARDCS)) {
     display_song("MicroSD failed", "or not present");
 
     while (true) blinkCode(no_microsd);
@@ -173,7 +145,7 @@ void setup()
   musicPlayer.applyPatch(plugin, pluginSize);
 
   display_song("Loading", "songs");
-  File root = sd.open("/");
+  File root = SD.open("/");
   populateFilenames(root);
   root.close();
   Serial.printf("Found %d songs\r\n", filenames.size());
@@ -296,35 +268,23 @@ void loop()
     }
 
     if (changed_song) {
-      if (!file.open(filename)) {
-        uint8_t errorCode = file.getError();
-        Serial.printf("Opening \"%s\" failed (%#0x - ", filename, (int) errorCode);
-        printSdErrorSymbol(&Serial, errorCode);
-        Serial.print(" - ");
-        printSdErrorText(&Serial, errorCode);
-        Serial.println(")");
-      } else {
-        Serial.printf("Playing %s\r\n", filename);
-      }
-
-      file.close();
-
       /*
        * TODO: playing an MP3, then while that's playing trying to switch to an OGG has silent playback. When you try to play the OGG again it works.
        *       attempt to follow the datasheet in _datasheet_stopping broke stopping.
        */
       musicPlayer.stopPlaying();
-      while (!musicPlayer.startPlayingFile(filename, &sd)) {
+      while (!musicPlayer.startPlayingFile(filename)) {
         Serial.println("Start failed");
 
-        sd.end();
-        if (sd.begin(CARDCS, SPI_SPEED)) {
+        if (SD.begin(VS1053_CS)) {
           Serial.println("SD card reinitialized.");
         } else {
           Serial.println("Failed to reinitialize SD card.");
-          Serial.println(sd.card()->errorCode());
-          Serial.println(sd.card()->errorData());
+          display_song("SD reinit", "failed");
+          delay(100);
         }
+
+        display_song("SD reinit", "retry");
       }
     }
   }
@@ -354,8 +314,8 @@ void populateFilenames(File dir)
         continue;
       }
 
-      char nameBuf[33] = {};
-      entry.getName(nameBuf, sizeof(nameBuf));
+      char nameBuf[128] = {};
+      strcpy(nameBuf, entry.name());
 
       // Check whether it's a supported extension. (MP3 is best supported.)
       for (size_t i = 0; i < COUNT_OF(accepted_extensions); i++) {
