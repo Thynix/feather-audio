@@ -204,8 +204,9 @@ void loop()
     // Left: speaker
     // Right: surface transducer
     musicPlayer.setVolume(volume, volume);
+    Serial.printf("Set volume %d\n", volume);
 
-    previous_display_volume = volume;
+    previous_display_volume = display_volume;
   }
 
   // Toggle pause on encoder button press.
