@@ -18,6 +18,7 @@ File file;
 
 void populateFilenames(File);
 void blinkCode(const int *);
+float readVolume();
 
 Adafruit_VS1053_FilePlayer musicPlayer =
   Adafruit_VS1053_FilePlayer(VS1053_RESET, VS1053_CS, VS1053_DCS, VS1053_DREQ, CARDCS);
@@ -59,6 +60,8 @@ int32_t encoder_position;
 const int short_blink_ms = 100;
 const int long_blink_ms = 500;
 const int after_pattern_ms = 1500;
+
+const unsigned long target_frametime = 15;
 
 const int no_seesaw[] = {long_blink_ms, short_blink_ms, short_blink_ms, long_blink_ms, 0};
 const int wrong_seesaw[] = {long_blink_ms, long_blink_ms, short_blink_ms, long_blink_ms, 0};
@@ -166,43 +169,21 @@ void setup()
 void loop()
 {
   static bool paused = false;
-  static int file_index = 0;
-  static bool left_mute = true;
-  static bool right_mute = false;
-  static const char* filename = NULL;
   static int previous_display_volume = -1;
+  static int selected_file_index = -1;
+  static unsigned long frame_times[60] = {};
+  static int frame_time_index = 0;
 
-  // When using a linear potentiometer, take the log to match volume perception.
-  // ADC max is 1023, and natural log of 1023 = 6.93049
-  float scaled_adc = log(max(1023 - analogRead(volume_pin), 1u)) / 6.93049;
+  unsigned long start = millis();
 
-  // Audio potentiometer - no scaling.
-  //float scaled_adc = analogRead(volume_pin) / 1023.0;
-
-  if (scaled_adc < 0.0f) scaled_adc = 0.0f;
-  if (scaled_adc > 1.0f) scaled_adc = 1.0f;
-
-  // Because higher values are quieter, invert scaled ADC:
-  // low ADC numbers should give high volume levels to be quiet.
-  uint8_t volume = (uint8_t) ((1.0f - scaled_adc) * inaudible);
-
-  // TODO: get buttons that can be pressed while using VS1053.
-  /*
-  if (toggleLeftChannelButton.update(button_b_pin) && !toggleLeftChannelButton.get()) {
-    left_mute = !left_mute;
-  }
-
-  if (toggleRightChannelButton.update(button_c_pin) && !toggleRightChannelButton.get()) {
-    right_mute = !right_mute;
-  }
-  */
+  // Because higher values given to musicPlayer.setVolume() are quieter, so
+  // invert scaled ADC. Low ADC numbers give high volume values to be quiet.
+  uint8_t volume = (uint8_t) ((1.0f - readVolume()) * inaudible);
 
   // Only change volume setting if the displayed value is different.
   // 0 is 100%; 160 is 0%.
-  int display_volume = int(100 - (100/160.0)*volume);
+  int display_volume = roundf(100 - (100/160.0)*volume);
   if (previous_display_volume != display_volume) {
-    // Left: speaker
-    // Right: surface transducer
     musicPlayer.setVolume(volume, volume);
     Serial.printf("Set volume %d\n", volume);
 
@@ -233,39 +214,39 @@ void loop()
     // Go to the next file on startup, after completing a song, or when requested.
     // The encoder may have moved multiple positions since the last check if
     // moving quickly, so consider each one.
-    bool changed_song = false;
+    bool changed_song = true;
     if (musicPlayer.stopped() || encoder_change < 0) {
-      Serial.print("Next ");
+      Serial.printf("From %d next", selected_file_index);
       do {
-        filename = filenames[file_index];
-        file_index++;
-        if ((size_t) file_index >= filenames.size()) {
-          file_index = 0;
+        if ((size_t) selected_file_index >= filenames.size() - 1) {
+          selected_file_index = 0;
+        } else {
+          selected_file_index++;
         }
 
-        Serial.print(encoder_change);
         Serial.print(' ');
+        Serial.print(encoder_change);
 
         encoder_change++;
       } while (encoder_change < 0);
-      Serial.println();
-      changed_song = true;
+      Serial.printf(" to %d\n", selected_file_index);
     } else if (encoder_change > 0) {
-      Serial.print("Previous ");
+      Serial.printf("From %d previous", selected_file_index);
       do {
-        filename = filenames[file_index];
-        file_index--;
-        if (file_index < 0) {
-          file_index = filenames.size() - 1;
+        if (selected_file_index <= 0) {
+          selected_file_index = filenames.size() - 1;
+        } else {
+          selected_file_index--;
         }
 
-        Serial.print(encoder_change);
         Serial.print(' ');
+        Serial.print(encoder_change);
 
         encoder_change--;
       } while (encoder_change > 0);
-      Serial.println();
-      changed_song = true;
+      Serial.printf(" to %d\n", selected_file_index);
+    } else {
+      changed_song = false;
     }
 
     if (changed_song) {
@@ -274,7 +255,7 @@ void loop()
        *       attempt to follow the datasheet in _datasheet_stopping broke stopping.
        */
       musicPlayer.stopPlaying();
-      while (!musicPlayer.startPlayingFile(filename)) {
+      while (!musicPlayer.startPlayingFile(filenames[selected_file_index])) {
         Serial.println("Start failed");
 
         if (SD.begin(VS1053_CS)) {
@@ -291,11 +272,29 @@ void loop()
   }
 
   if (paused) {
-    display_song(filename, "Paused");
+    display_song(filenames[selected_file_index], "Paused");
   } else {
     char buf[32];
     sprintf(buf, "Volume %d", display_volume);
-    display_song(filename, buf);
+    display_song(filenames[selected_file_index], buf);
+  }
+
+  // Display frame time information whenever frame time buffer fills.
+  unsigned long frame_time = millis() - start;
+  if (frame_time_index == COUNT_OF(frame_times)) {
+    unsigned long total = 0;
+    for (unsigned int i = 0; i < COUNT_OF(frame_times); i++) {
+      total += frame_times[i];
+    }
+
+    Serial.printf("Average frame time %d ms\n", int(total / ((float)COUNT_OF(frame_times))));
+
+    frame_time_index = 0;
+  }
+  frame_times[frame_time_index++] = frame_time;
+
+  if (frame_time < target_frametime) {
+    delay(target_frametime - frame_time);
   }
 }
 
@@ -337,6 +336,29 @@ accept_entry:
 
       entry.close();
   }
+}
+
+float readVolume()
+{
+  const int volumeReads = 20;
+
+  uint32_t readTotal = 0;
+  for (int i = 0; i < volumeReads; i++)
+    readTotal += analogRead(volume_pin);
+
+  uint32_t averageRead = readTotal / ((float)volumeReads);
+
+  // When using a linear potentiometer, take the log to match volume perception.
+  // ADC max is 1023, and natural log of 1023 = 6.93049
+  float scaledADC = log(max(1023 - averageRead, 1u)) / 6.93049;
+
+  // Audio potentiometer - no scaling.
+  //float scaledADC = analogRead(volume_pin) / 1023.0;
+
+  if (scaledADC < 0.0f) scaledADC = 0.0f;
+  if (scaledADC > 1.0f) scaledADC = 1.0f;
+
+  return scaledADC;
 }
 
 void blinkCode(const int *delays)
