@@ -340,7 +340,7 @@ accept_entry:
 
 float readVolume()
 {
-  const int volumeReads = 20;
+  const int volumeReads = 200;
 
   uint32_t readTotal = 0;
   for (int i = 0; i < volumeReads; i++)
