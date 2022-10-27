@@ -7,9 +7,10 @@
 #include <Wire.h>
 #include <Adafruit_seesaw.h>
 #include <seesaw_neopixel.h>
-// Specifically for use with the Adafruit M0 Feather, the pins are pre-set here!
 #include <feather_pins.h>
 #include <vector>
+#include <display.h>
+#include <id3tag.h>
 
 #define COUNT_OF(x) ((sizeof(x)/sizeof(0[x])) / ((size_t)(!(sizeof(x) % sizeof(0[x])))))
 
@@ -51,13 +52,16 @@ Adafruit_VS1053_FilePlayer musicPlayer =
 
 const int debounce_ms = 100;
 Debouncer encoderButton(debounce_ms);
+Debouncer toggleLeftChannelButton(debounce_ms);
+Debouncer toggleRightChannelButton(debounce_ms);
 
 const uint8_t volume_pin = A2;
-// Feather M4 button A
-const uint8_t wait_for_serial_pin = 9;
 
-// There's a lot of wobble in the volume knob reading; ignore changes less than this big.
-const int adc_noise_threshold = 5;
+// Feather M4 pins
+// Also used for VS1053 - can't use these while using it.
+const uint8_t button_a_pin = 9;
+const uint8_t button_b_pin = 6;
+const uint8_t button_c_pin = 5;
 
 const int fileStackSize = 5;
 int fileIndex = 0;
@@ -89,36 +93,39 @@ const int wrong_seesaw[] = {long_blink_ms, long_blink_ms, short_blink_ms, long_b
 const int no_VS1053[] = {short_blink_ms, short_blink_ms, long_blink_ms, long_blink_ms, 0};
 const int no_microsd[] = {short_blink_ms, long_blink_ms, 0};
 
+// 160 is low enough to seem silent.
+const uint8_t inaudible = 160;
+const uint8_t silent = 255;
+const uint8_t max_volume = 0;
+
 void setup()
 {
-  Serial.begin(9600);
-
-  // if you're using Bluefruit or LoRa/RFM Feather, disable the radio module
-  //pinMode(8, INPUT_PULLUP);
-
-  pinMode(volume_pin, INPUT);
-  pinMode(wait_for_serial_pin, INPUT_PULLUP);
-
   // Keep LED on during startup.
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
 
+  Serial.begin(115200);
+
+  pinMode(volume_pin, INPUT);
+  pinMode(button_a_pin, INPUT_PULLUP);
+
   // Blink while waiting for serial while button A is held.
   // Blink code: short on, short off
-  while (!Serial && !digitalRead(wait_for_serial_pin)) {
+  while (!Serial && !digitalRead(button_a_pin)) {
     digitalWrite(LED_BUILTIN, LOW);
     delay(short_blink_ms);
     digitalWrite(LED_BUILTIN, HIGH);
     delay(short_blink_ms);
   }
 
+  display_setup();
+
   Wire.begin();
 
   // Search for Seesaw device.
   // On failure, blink code: long off, short on, short off, long on
   if (! ss.begin(SEESAW_ADDR) || ! sspixel.begin(SEESAW_ADDR)) {
-    Serial.println("Couldn't find rotary encoder");
-
+    display_song("cannot find", "encoder");
     while(true) blinkCode(no_seesaw);
   }
 
@@ -128,6 +135,8 @@ void setup()
   if (version  != 4991){
     Serial.print("Wrong firmware loaded? Instead of rotary encoder, found product #");
     Serial.println(version);
+
+    display_song("encoder", "version");
 
     while(true) blinkCode(wrong_seesaw);
   }
@@ -147,42 +156,36 @@ void setup()
   ss.enableEncoderInterrupt();
 
   // Initialize music player. On failure, blink code: short off, short on, long off, long on
-  if (! musicPlayer.begin()) {
-    Serial.println(F("Couldn't find VS1053, do you have the right pins defined?"));
+  if (!musicPlayer.begin()) {
+    display_song("cannot find", "VS1053");
 
     while (true) blinkCode(no_VS1053);
   }
 
   // Initialize SD card. On failure, blink code: short off, long on
   if (!sd.begin(CARDCS, SPI_SPEED)) {
-    Serial.println(F("MicroSD failed, or not present"));
+    display_song("MicroSD failed", "or not present");
 
     while (true) blinkCode(no_microsd);
   }
 
+  display_song("Patching", "VS1053");
   musicPlayer.applyPatch(plugin, pluginSize);
 
-  Serial.println(F("Searching for songs"));
+  display_song("Loading", "songs");
   File root = sd.open("/");
   populateFilenames(root);
   root.close();
   Serial.printf("Found %d songs\r\n", filenames.size());
+  display_song("Loaded", "songs");
 
   if (filenames.size() == 0) {
-    Serial.println(F("No songs found"));
-
+    display_song("No songs", "found");
     while (true) blinkCode(no_microsd);
   }
 
-#if defined(__AVR_ATmega32U4__)
-  // Timer interrupts are not suggested, better to use DREQ interrupt!
-  // but we don't have them on the 32u4 feather...
-  musicPlayer.useInterrupt(VS1053_FILEPLAYER_TIMER0_INT); // timer int
-#else
-  // If DREQ is on an interrupt pin we can do background
-  // audio playing
-  musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT);  // DREQ int
-#endif
+  // DREQ is on an interrupt pin, so use background audio playing.
+  musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT);
 
   // Turn LED off now that startup is complete.
   digitalWrite(LED_BUILTIN, LOW);
@@ -192,25 +195,46 @@ void loop()
 {
   static bool paused = false;
   static int file_index = 0;
+  static bool left_mute = true;
+  static bool right_mute = false;
+  static const char* filename = NULL;
+  static int previous_display_volume = -1;
 
   // When using a linear potentiometer, take the log to match volume perception.
   // ADC max is 1023, and natural log of 1023 = 6.93049
-  // No need if using an audio potentiometer of course.
-  float scaled_adc = log(max(analogRead(volume_pin), 1u)) / 6.93049;
-  // float scaled_adc = analogRead(volume_pin) / 1023.0;
+  float scaled_adc = log(max(1023 - analogRead(volume_pin), 1u)) / 6.93049;
+
+  // Audio potentiometer - no scaling.
+  //float scaled_adc = analogRead(volume_pin) / 1023.0;
+
   if (scaled_adc < 0.0f) scaled_adc = 0.0f;
   if (scaled_adc > 1.0f) scaled_adc = 1.0f;
 
-  // lower numbers == louder volume!
   // Because higher values are quieter, invert scaled ADC:
   // low ADC numbers should give high volume levels to be quiet.
-  // 160 is low enough to seem silent.
-  uint8_t volume = (uint8_t) ((1.0f - scaled_adc) * 160);
+  uint8_t volume = (uint8_t) ((1.0f - scaled_adc) * inaudible);
 
-  // Set volume for left, right channels.
-  musicPlayer.setVolume(volume, volume);
+  // TODO: get buttons that can be pressed while using VS1053.
+  /*
+  if (toggleLeftChannelButton.update(button_b_pin) && !toggleLeftChannelButton.get()) {
+    left_mute = !left_mute;
+  }
 
-  //Serial.println(volume);
+  if (toggleRightChannelButton.update(button_c_pin) && !toggleRightChannelButton.get()) {
+    right_mute = !right_mute;
+  }
+  */
+
+  // Only change volume setting if the displayed value is different.
+  // 0 is 100%; 160 is 0%.
+  int display_volume = int(100 - (100/160.0)*volume);
+  if (previous_display_volume != display_volume) {
+    // Left: speaker
+    // Right: surface transducer
+    musicPlayer.setVolume(volume, volume);
+
+    previous_display_volume = volume;
+  }
 
   // Toggle pause on encoder button press.
   if (encoderButton.update(ss.digitalRead(SS_SWITCH)) && !encoderButton.get()) {
@@ -236,7 +260,7 @@ void loop()
     // Go to the next file on startup, after completing a song, or when requested.
     // The encoder may have moved multiple positions since the last check if
     // moving quickly, so consider each one.
-    const char* filename = NULL;
+    bool changed_song = false;
     if (musicPlayer.stopped() || encoder_change < 0) {
       Serial.print("Next ");
       do {
@@ -252,6 +276,7 @@ void loop()
         encoder_change++;
       } while (encoder_change < 0);
       Serial.println();
+      changed_song = true;
     } else if (encoder_change > 0) {
       Serial.print("Previous ");
       do {
@@ -267,9 +292,10 @@ void loop()
         encoder_change--;
       } while (encoder_change > 0);
       Serial.println();
+      changed_song = true;
     }
 
-    if (filename) {
+    if (changed_song) {
       if (!file.open(filename)) {
         uint8_t errorCode = file.getError();
         Serial.printf("Opening \"%s\" failed (%#0x - ", filename, (int) errorCode);
@@ -302,6 +328,14 @@ void loop()
       }
     }
   }
+
+  if (paused) {
+    display_song(filename, "Paused");
+  } else {
+    char buf[32];
+    sprintf(buf, "Volume %d", display_volume);
+    display_song(filename, buf);
+  }
 }
 
 void populateFilenames(File dir)
@@ -322,12 +356,6 @@ void populateFilenames(File dir)
 
       char nameBuf[33] = {};
       entry.getName(nameBuf, sizeof(nameBuf));
-
-      /*
-      Serial.print("Found \"");
-      Serial.print(nameBuf);
-      Serial.println("\"");
-      */
 
       // Check whether it's a supported extension. (MP3 is best supported.)
       for (size_t i = 0; i < COUNT_OF(accepted_extensions); i++) {
