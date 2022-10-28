@@ -11,6 +11,7 @@
 #include <vector>
 #include <display.h>
 //#include <id3tag.h>
+#include <algorithm>
 
 #define COUNT_OF(x) ((sizeof(x)/sizeof(0[x])) / ((size_t)(!(sizeof(x) % sizeof(0[x])))))
 
@@ -154,6 +155,8 @@ void setup()
   Serial.printf("Found %d songs\r\n", filenames.size());
   display_song("Loaded", "songs");
 
+  std::sort(filenames.begin(), filenames.end());
+
   if (filenames.size() == 0) {
     display_song("No songs", "found");
     while (true) blinkCode(no_microsd);
@@ -171,7 +174,7 @@ void loop()
   static bool paused = false;
   static int previous_display_volume = -1;
   static int selected_file_index = -1;
-  static unsigned long frame_times[60] = {};
+  static unsigned long frame_times[120] = {};
   static int frame_time_index = 0;
 
   unsigned long start = millis();
@@ -255,18 +258,13 @@ void loop()
        *       attempt to follow the datasheet in _datasheet_stopping broke stopping.
        */
       musicPlayer.stopPlaying();
+      Serial.println(filenames[selected_file_index]);
       while (!musicPlayer.startPlayingFile(filenames[selected_file_index])) {
-        Serial.println("Start failed");
-
-        if (SD.begin(VS1053_CS)) {
-          Serial.println("SD card reinitialized.");
-        } else {
-          Serial.println("Failed to reinitialize SD card.");
-          display_song("SD reinit", "failed");
-          delay(100);
-        }
-
-        display_song("SD reinit", "retry");
+        display_song("start failed", "");
+        delay(100);
+        musicPlayer.stopPlaying();
+        display_song("retrying", "");
+        delay(100);
       }
     }
   }
@@ -308,8 +306,9 @@ void populateFilenames(File dir)
       }
 
       // Recurse if necessary.
+      // TODO: fix recursed paths
       if (entry.isDirectory()) {
-        populateFilenames(entry);
+        //populateFilenames(entry);
         entry.close();
         continue;
       }
