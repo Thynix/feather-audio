@@ -55,7 +55,7 @@ void display_text(const char* top, const char* bottom)
   }
 
   // Cap length to displayable
-  strncpy(previous_top, top, 20);
+  strncpy(previous_top, top, 30);
   strncpy(previous_bottom, bottom, 10);
 
   Serial.printf("Displaying \"%s\", \"%s\"\r\n",
@@ -66,7 +66,7 @@ void display_text(const char* top, const char* bottom)
   display.setCursor(0, 0);
   display.print(previous_top);
 
-  display.setCursor(0, 40);
+  display.setCursor(0, 50);
   display.println(previous_bottom);
 
   display.display();
