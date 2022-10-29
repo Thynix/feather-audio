@@ -42,7 +42,7 @@ const int fileStackSize = 5;
 int fileIndex = 0;
 File fileStack[fileStackSize] = {};
 std::vector<const char*> filenames;
-std::vector<const char*> titles;
+std::vector<const char*> display_names;
 
 const char* const accepted_extensions[] = {
   ".MP3", ".mp3",
@@ -168,17 +168,25 @@ void setup()
     while (true) blinkCode(no_microsd);
   }
 
-  titles.reserve(filenames.size());
+  display_names.reserve(filenames.size());
   for (size_t i = 0; i < filenames.size(); i++) {
     auto file = SD.open(filenames[i]);
     if (mp3_id3_file_has_tags(&file)) {
-      titles[i] = mp3_id3_file_read_tag(&file, MP3_ID3_TAG_TITLE);
+      const char* title = mp3_id3_file_read_tag(&file, MP3_ID3_TAG_TITLE);
+      const char* artist = mp3_id3_file_read_tag(&file, MP3_ID3_TAG_ARTIST);
+      const size_t display_name_len = 32;
+      char *display_name = (char*)malloc(display_name_len);
+      snprintf(display_name, display_name_len, "%s - %s", title, artist);
+      free((void*)title);
+      free((void*)artist);
+      display_names[i] = display_name;
     } else {
       // Remove extension from filename
       char *filename = (char*) malloc(strlen(filenames[i]) + 1 - 4);
       strcpy(filename, filenames[i]);
       filename[strlen(filenames[i]) - 4] = '\0';
-      titles[i] = filename;
+      free((void*)filenames[i]);
+      display_names[i] = filename;
     }
   }
 
@@ -294,11 +302,11 @@ void loop()
   }
 
   if (paused) {
-    display_text(titles[selected_file_index], "   Paused");
+    display_text(display_names[selected_file_index], "   Paused");
   } else {
     char buf[32];
     sprintf(buf, "   Vol %d%%", display_volume);
-    display_text(titles[selected_file_index], buf);
+    display_text(display_names[selected_file_index], buf);
   }
 
   // Display frame time information whenever frame time buffer fills.
