@@ -211,13 +211,14 @@ void loop()
       sspixel.setPixelColor(0, 0x000000);
     }
     sspixel.show();
-  } else if (!paused) {
+  } else {
     // The encoder position doesn't have a valid reading when the button is
     // pressed, so consider it only when the button isn't pressed.
     auto new_position = ss.getEncoderPosition();
     auto encoder_change = new_position - encoder_position;
     encoder_position = new_position;
 
+    if (!paused) {
     // Go to the next file on startup, after completing a song, or when requested.
     // The encoder may have moved multiple positions since the last check if
     // moving quickly, so consider each one.
@@ -270,6 +271,7 @@ void loop()
         display_song("retrying", "");
         delay(100);
       }
+    }
     }
   }
 
