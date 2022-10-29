@@ -32,6 +32,8 @@ Adafruit_SH1107 display = Adafruit_SH1107(64, 128, &Wire);
   #define BUTTON_C  5
 #endif
 
+void write_display(const char*, const char*);
+
 void display_setup()
 {
   delay(250); // wait for the OLED to power up
@@ -46,28 +48,76 @@ void display_setup()
 
 void display_text(const char* top, const char* bottom)
 {
-  static char previous_top[32] = {};
-  static char previous_bottom[32] = {};
+  const int scroll_frames = 60;
+  const int top_length = 30;
+  const int bottom_length = 10;
+  static const char* previous_top = NULL;
+  static const char* previous_bottom = NULL;
+  static int scroll_frame = 0;
+  char top_buf[top_length + 1] = {};
+  char bottom_buf[bottom_length + 1] = {};
 
-  if (!strcmp(previous_top, top) && !strcmp(previous_bottom, bottom)) {
-    // Do nothing if there are no changes.
+  // First run pretend it's the buffers to avoid comparison to NULL.
+  if (previous_top == NULL) previous_top = top_buf;
+  if (previous_bottom == NULL) previous_bottom = bottom_buf;
+
+  bool new_text = false;
+  bool top_scroll = strlen(top) > top_length;
+  bool bottom_scroll = strlen(bottom) > bottom_length;
+  bool scrolling = top_scroll || bottom_scroll;
+  bool top_changed = strcmp(previous_top, top);
+  bool bottom_changed = strcmp(previous_bottom, bottom);
+
+  // Do nothing if there are no changes and no scrolling to perform.
+  if (!scrolling && !top_changed && !bottom_changed) {
+    return;
+  } else if (top_changed || bottom_changed) {
+    // Reset scrolling - input changed. Ensure a refresh happens, as the text
+    // could change within the first scroll frame.
+    scroll_frame = 0;
+    new_text = true;
+
+    previous_top = top;
+    previous_bottom = bottom;
+  }
+
+  // Update scroll frame, and determine if the scroll position has changed.
+  // Update anyway if there's new text to show.
+  int previous_scroll_offset = scroll_frame / scroll_frames;
+  scroll_frame++;
+  int scroll_offset = scroll_frame / scroll_frames;
+  if (!new_text && previous_scroll_offset == scroll_offset) {
     return;
   }
 
-  // Cap length to displayable
-  strncpy(previous_top, top, 30);
-  strncpy(previous_bottom, bottom, 10);
+  // Start at scroll offset; cap length to displayable
+  int top_offset = top_scroll ? scroll_offset : 0;
+  int bottom_offset = bottom_scroll ? scroll_offset : 0;
 
+  strncpy(top_buf, top + top_offset, top_length);
+  strncpy(bottom_buf, bottom + bottom_offset, bottom_length);
+
+  // If scrolling has finished going through the entire line, reset scrolling.
+  if (strlen(top_buf) < top_length || strlen(bottom_buf) < bottom_length) {
+    scroll_frame = 1;
+    strncpy(top_buf, top, top_length);
+    strncpy(bottom_buf, bottom, bottom_length);
+  }
+
+  write_display(top_buf, bottom_buf);
+}
+
+void write_display(const char *top, const char *bottom) {
   Serial.printf("Displaying \"%s\", \"%s\"\r\n",
-                previous_top, previous_bottom);
+                top, bottom);
 
   display.clearDisplay();
 
   display.setCursor(0, 0);
-  display.print(previous_top);
+  display.print(top);
 
   display.setCursor(0, 50);
-  display.println(previous_bottom);
+  display.println(bottom);
 
   display.display();
 }

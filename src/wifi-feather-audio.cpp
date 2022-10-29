@@ -115,9 +115,10 @@ void setup()
     Serial.print("Wrong firmware loaded? Instead of rotary encoder, found product #");
     Serial.println(version);
 
-    display_text("Wrong encoder ver", "");
-
-    while(true) blinkCode(wrong_seesaw);
+    while(true) {
+      display_text("Wrong encoder version", "");
+      blinkCode(wrong_seesaw);
+    }
   }
 
   // set not so bright!
@@ -174,7 +175,7 @@ void setup()
     if (mp3_id3_file_has_tags(&file)) {
       const char* title = mp3_id3_file_read_tag(&file, MP3_ID3_TAG_TITLE);
       const char* artist = mp3_id3_file_read_tag(&file, MP3_ID3_TAG_ARTIST);
-      const size_t display_name_len = 32;
+      const size_t display_name_len = 128;
       char *display_name = (char*)malloc(display_name_len);
       snprintf(display_name, display_name_len, "%s - %s", title, artist);
       free((void*)title);
@@ -291,10 +292,10 @@ void loop()
       musicPlayer.stopPlaying();
       Serial.println(filenames[selected_file_index]);
       while (!musicPlayer.startPlayingFile(filenames[selected_file_index])) {
-        display_text("start failed", "");
+        display_text("Start failed", "");
         delay(100);
         musicPlayer.stopPlaying();
-        display_text("retrying", "");
+        display_text("Retrying", "");
         delay(100);
       }
     }
