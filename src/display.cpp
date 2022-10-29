@@ -44,33 +44,30 @@ void display_setup()
   display.setTextColor(SH110X_WHITE);
 }
 
-void display_song(const char* name, const char* status)
+void display_text(const char* top, const char* bottom)
 {
-  static char previous_name[128] = {};
-  static char previous_status[128] = {};
+  static char previous_top[32] = {};
+  static char previous_bottom[32] = {};
 
-  if (!strcmp(previous_name, name) && !strcmp(previous_status, status)) {
+  if (!strcmp(previous_top, top) && !strcmp(previous_bottom, bottom)) {
     // Do nothing if there are no changes.
     return;
   }
 
-  strcpy(previous_name, name);
-  strcpy(previous_status, status);
-
   // Cap length to displayable
-  previous_name[20] = '\0';
-  previous_status[10] = '\0';
+  strncpy(previous_top, top, 20);
+  strncpy(previous_bottom, bottom, 10);
 
   Serial.printf("Displaying \"%s\", \"%s\"\r\n",
-                previous_name, previous_status);
+                previous_top, previous_bottom);
 
   display.clearDisplay();
 
-  display.setCursor(1, 0);
-  display.print(previous_name);
+  display.setCursor(0, 0);
+  display.print(previous_top);
 
-  display.setCursor(1, 40);
-  display.println(previous_status);
+  display.setCursor(0, 40);
+  display.println(previous_bottom);
 
   display.display();
 }

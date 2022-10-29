@@ -90,6 +90,7 @@ void setup()
   // Blink while waiting for serial while button A is held.
   // Blink code: short on, short off
   while (!Serial && !digitalRead(button_a_pin)) {
+    display_text("Waiting for serial", "");
     digitalWrite(LED_BUILTIN, LOW);
     delay(short_blink_ms);
     digitalWrite(LED_BUILTIN, HIGH);
@@ -103,7 +104,7 @@ void setup()
   // Search for Seesaw device.
   // On failure, blink code: long off, short on, short off, long on
   if (! ss.begin(SEESAW_ADDR) || ! sspixel.begin(SEESAW_ADDR)) {
-    display_song("cannot find", "encoder");
+    display_text("Cannot find", "encoder");
     while(true) blinkCode(no_seesaw);
   }
 
@@ -114,7 +115,7 @@ void setup()
     Serial.print("Wrong firmware loaded? Instead of rotary encoder, found product #");
     Serial.println(version);
 
-    display_song("encoder", "version");
+    display_text("Wrong encoder ver", "");
 
     while(true) blinkCode(wrong_seesaw);
   }
@@ -135,22 +136,22 @@ void setup()
 
   // Initialize music player. On failure, blink code: short off, short on, long off, long on
   if (!musicPlayer.begin()) {
-    display_song("cannot find", "VS1053");
+    display_text("Cannot find", "VS1053");
 
     while (true) blinkCode(no_VS1053);
   }
 
   // Initialize SD card. On failure, blink code: short off, long on
   if (!SD.begin(CARDCS)) {
-    display_song("MicroSD failed", "or not present");
+    display_text("MicroSD failed or not", "present");
 
     while (true) blinkCode(no_microsd);
   }
 
-  display_song("Patching", "VS1053");
+  display_text("Patching VS1053", "");
   musicPlayer.applyPatch(plugin, pluginSize);
 
-  display_song("Loading", "songs");
+  display_text("Loading songs", "");
   auto root = SD.open("/");
   populateFilenames(root);
   root.close();
@@ -163,7 +164,7 @@ void setup()
   std::sort(filenames.begin(), filenames.end(), compareStrings);
 
   if (filenames.size() == 0) {
-    display_song("No songs", "found");
+    display_text("No songs found", "");
     while (true) blinkCode(no_microsd);
   }
 
@@ -181,7 +182,7 @@ void setup()
     }
   }
 
-  display_song("Loaded", "songs");
+  display_text("Loaded songs", "");
 
   // DREQ is on an interrupt pin, so use background audio playing.
   musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT);
@@ -282,10 +283,10 @@ void loop()
       musicPlayer.stopPlaying();
       Serial.println(filenames[selected_file_index]);
       while (!musicPlayer.startPlayingFile(filenames[selected_file_index])) {
-        display_song("start failed", "");
+        display_text("start failed", "");
         delay(100);
         musicPlayer.stopPlaying();
-        display_song("retrying", "");
+        display_text("retrying", "");
         delay(100);
       }
     }
@@ -293,11 +294,11 @@ void loop()
   }
 
   if (paused) {
-    display_song(titles[selected_file_index], "   Paused");
+    display_text(titles[selected_file_index], "   Paused");
   } else {
     char buf[32];
     sprintf(buf, "   Vol %d%%", display_volume);
-    display_song(titles[selected_file_index], buf);
+    display_text(titles[selected_file_index], buf);
   }
 
   // Display frame time information whenever frame time buffer fills.
