@@ -155,7 +155,11 @@ void setup()
   Serial.printf("Found %d songs\r\n", filenames.size());
   display_song("Loaded", "songs");
 
-  std::sort(filenames.begin(), filenames.end());
+  struct {
+    bool operator()(const char* a, const char* b) { return strcmp(a, b) < 0; }
+  } compareStrings;
+
+  std::sort(filenames.begin(), filenames.end(), compareStrings);
 
   if (filenames.size() == 0) {
     display_song("No songs", "found");
