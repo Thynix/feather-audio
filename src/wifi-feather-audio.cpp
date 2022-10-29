@@ -10,8 +10,9 @@
 #include <feather_pins.h>
 #include <vector>
 #include <display.h>
-//#include <id3tag.h>
 #include <algorithm>
+#define MP3_ID3_TAGS_IMPLEMENTATION
+#include <mp3_id3_tags.h>
 
 #define COUNT_OF(x) ((sizeof(x)/sizeof(0[x])) / ((size_t)(!(sizeof(x) % sizeof(0[x])))))
 
@@ -41,6 +42,7 @@ const int fileStackSize = 5;
 int fileIndex = 0;
 File fileStack[fileStackSize] = {};
 std::vector<const char*> filenames;
+std::vector<const char*> titles;
 
 const char* const accepted_extensions[] = {
   ".MP3", ".mp3",
@@ -149,11 +151,10 @@ void setup()
   musicPlayer.applyPatch(plugin, pluginSize);
 
   display_song("Loading", "songs");
-  File root = SD.open("/");
+  auto root = SD.open("/");
   populateFilenames(root);
   root.close();
   Serial.printf("Found %d songs\r\n", filenames.size());
-  display_song("Loaded", "songs");
 
   struct {
     bool operator()(const char* a, const char* b) { return strcmp(a, b) < 0; }
@@ -165,6 +166,22 @@ void setup()
     display_song("No songs", "found");
     while (true) blinkCode(no_microsd);
   }
+
+  titles.reserve(filenames.size());
+  for (size_t i = 0; i < filenames.size(); i++) {
+    auto file = SD.open(filenames[i]);
+    if (mp3_id3_file_has_tags(&file)) {
+      titles[i] = mp3_id3_file_read_tag(&file, MP3_ID3_TAG_TITLE);
+    } else {
+      // Remove extension from filename
+      char *filename = (char*) malloc(strlen(filenames[i]) + 1 - 4);
+      strcpy(filename, filenames[i]);
+      filename[strlen(filenames[i]) - 4] = '\0';
+      titles[i] = filename;
+    }
+  }
+
+  display_song("Loaded", "songs");
 
   // DREQ is on an interrupt pin, so use background audio playing.
   musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT);
@@ -276,11 +293,11 @@ void loop()
   }
 
   if (paused) {
-    display_song(filenames[selected_file_index], "Paused");
+    display_song(titles[selected_file_index], "   Paused");
   } else {
     char buf[32];
-    sprintf(buf, "Volume %d", display_volume);
-    display_song(filenames[selected_file_index], buf);
+    sprintf(buf, "   Vol %d%%", display_volume);
+    display_song(titles[selected_file_index], buf);
   }
 
   // Display frame time information whenever frame time buffer fills.

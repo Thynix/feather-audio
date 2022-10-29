@@ -57,15 +57,20 @@ void display_song(const char* name, const char* status)
   strcpy(previous_name, name);
   strcpy(previous_status, status);
 
-  Serial.printf("Displaying \"%s\", \"%s\"\r\n", name, status);
+  // Cap length to displayable
+  previous_name[20] = '\0';
+  previous_status[10] = '\0';
+
+  Serial.printf("Displaying \"%s\", \"%s\"\r\n",
+                previous_name, previous_status);
 
   display.clearDisplay();
 
   display.setCursor(1, 0);
-  display.print(name);
+  display.print(previous_name);
 
-  display.setCursor(1, 32);
-  display.println(status);
+  display.setCursor(1, 40);
+  display.println(previous_status);
 
   display.display();
 }
