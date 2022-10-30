@@ -33,7 +33,7 @@ Adafruit_SH1107 display = Adafruit_SH1107(64, 128, &Wire);
 #endif
 
 void write_display(const char*, const char*);
-char *strdup(const char*);
+char *duplicate_str(const char*);
 
 void display_setup()
 {
@@ -80,12 +80,12 @@ void display_text(const char* top, const char* bottom)
   if (top_changed) {
     top_scroll_frame = 0;
     free((void*)previous_top);
-    previous_top = strdup(top);
+    previous_top = duplicate_str(top);
   }
   if (bottom_changed) {
     bottom_scroll_frame = 0;
     free((void*)previous_bottom);
-    previous_bottom = strdup(bottom);
+    previous_bottom = duplicate_str(bottom);
   }
 
   // Update scroll frames, and determine if the scroll position has changed.
@@ -140,7 +140,7 @@ void write_display(const char *top, const char *bottom) {
   display.display();
 }
 
-char *strdup(const char* in) {
+char *duplicate_str(const char* in) {
   char *out = (char*)malloc(strlen(in) + 1);
   return strcpy(out, in);
 }
