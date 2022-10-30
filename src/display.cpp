@@ -33,6 +33,7 @@ Adafruit_SH1107 display = Adafruit_SH1107(64, 128, &Wire);
 #endif
 
 void write_display(const char*, const char*);
+char *strdup(const char*);
 
 void display_setup()
 {
@@ -53,15 +54,16 @@ void display_text(const char* top, const char* bottom)
   const int bottom_length = 10;
   static const char* previous_top = NULL;
   static const char* previous_bottom = NULL;
-  static int scroll_frame = 0;
+  static int top_scroll_frame = 0;
+  static int bottom_scroll_frame = 0;
   char top_buf[top_length + 1] = {};
   char bottom_buf[bottom_length + 1] = {};
 
-  // First run pretend it's the buffers to avoid comparison to NULL.
-  if (previous_top == NULL) previous_top = top_buf;
-  if (previous_bottom == NULL) previous_bottom = bottom_buf;
+  // To avoid NULL inputs for strcmp() set these to something heap-allocated.
+  // They'll be freed when the strings change.
+  if (previous_top == NULL) previous_top = (char*)malloc(1);
+  if (previous_bottom == NULL) previous_bottom = (char*)malloc(1);
 
-  bool new_text = false;
   bool top_scroll = strlen(top) > top_length;
   bool bottom_scroll = strlen(bottom) > bottom_length;
   bool scrolling = top_scroll || bottom_scroll;
@@ -71,36 +73,52 @@ void display_text(const char* top, const char* bottom)
   // Do nothing if there are no changes and no scrolling to perform.
   if (!scrolling && !top_changed && !bottom_changed) {
     return;
-  } else if (top_changed || bottom_changed) {
-    // Reset scrolling - input changed. Ensure a refresh happens, as the text
-    // could change within the first scroll frame.
-    scroll_frame = 0;
-    new_text = true;
-
-    previous_top = top;
-    previous_bottom = bottom;
   }
 
-  // Update scroll frame, and determine if the scroll position has changed.
+  // Reset scrolling - input changed. Ensure a refresh happens, as the text
+  // could change within the first scroll frame.
+  if (top_changed) {
+    top_scroll_frame = 0;
+    free((void*)previous_top);
+    previous_top = strdup(top);
+  }
+  if (bottom_changed) {
+    bottom_scroll_frame = 0;
+    free((void*)previous_bottom);
+    previous_bottom = strdup(bottom);
+  }
+
+  // Update scroll frames, and determine if the scroll position has changed.
   // Update anyway if there's new text to show.
-  int previous_scroll_offset = scroll_frame / scroll_frames;
-  scroll_frame++;
-  int scroll_offset = scroll_frame / scroll_frames;
-  if (!new_text && previous_scroll_offset == scroll_offset) {
+  int previous_top_scroll_offset = top_scroll_frame / scroll_frames;
+  top_scroll_frame++;
+  int top_scroll_offset = top_scroll_frame / scroll_frames;
+
+  int previous_bottom_scroll_offset = bottom_scroll_frame / scroll_frames;
+  bottom_scroll_frame++;
+  int bottom_scroll_offset = bottom_scroll_frame / scroll_frames;
+
+  if (!(top_changed || bottom_changed) &&
+      previous_top_scroll_offset == top_scroll_offset &&
+      previous_bottom_scroll_offset == bottom_scroll_offset) {
     return;
   }
 
   // Start at scroll offset; cap length to displayable
-  int top_offset = top_scroll ? scroll_offset : 0;
-  int bottom_offset = bottom_scroll ? scroll_offset : 0;
+  int top_offset = top_scroll ? top_scroll_offset : 0;
+  int bottom_offset = bottom_scroll ? bottom_scroll_offset : 0;
 
   strncpy(top_buf, top + top_offset, top_length);
   strncpy(bottom_buf, bottom + bottom_offset, bottom_length);
 
   // If scrolling has finished going through the entire line, reset scrolling.
-  if (strlen(top_buf) < top_length || strlen(bottom_buf) < bottom_length) {
-    scroll_frame = 1;
+  if (strlen(top_buf) < top_length) {
+    top_scroll_frame = 1;
     strncpy(top_buf, top, top_length);
+  }
+
+  if (strlen(bottom_buf) < bottom_length) {
+    bottom_scroll_frame = 1;
     strncpy(bottom_buf, bottom, bottom_length);
   }
 
@@ -120,4 +138,9 @@ void write_display(const char *top, const char *bottom) {
   display.println(bottom);
 
   display.display();
+}
+
+char *strdup(const char* in) {
+  char *out = (char*)malloc(strlen(in) + 1);
+  return strcpy(out, in);
 }
