@@ -21,6 +21,7 @@ File file;
 void populateFilenames(File);
 void blinkCode(const int *);
 float readVolume();
+bool waitForSerial();
 
 Adafruit_VS1053_FilePlayer musicPlayer =
   Adafruit_VS1053_FilePlayer(VS1053_RESET, VS1053_CS, VS1053_DCS, VS1053_DREQ, CARDCS);
@@ -50,13 +51,11 @@ const char* const accepted_extensions[] = {
   ".FLA", ".fla",
 };
 
-#define SS_SWITCH        24
-#define SS_NEOPIX        6
-
-#define SEESAW_ADDR          0x36
+const uint8_t seesaw_addr = 0x36;
+const uint8_t seesaw_switch_pin = 24;
 
 Adafruit_seesaw ss;
-seesaw_NeoPixel sspixel = seesaw_NeoPixel(1, SS_NEOPIX, NEO_GRB + NEO_KHZ800);
+seesaw_NeoPixel sspixel = seesaw_NeoPixel(1);
 
 int32_t encoder_position;
 
@@ -66,10 +65,13 @@ const int after_pattern_ms = 1500;
 
 const unsigned long target_frametime = 15;
 
-const int no_seesaw[] = {long_blink_ms, short_blink_ms, short_blink_ms, long_blink_ms, 0};
-const int wrong_seesaw[] = {long_blink_ms, long_blink_ms, short_blink_ms, long_blink_ms, 0};
-const int no_VS1053[] = {short_blink_ms, short_blink_ms, long_blink_ms, long_blink_ms, 0};
-const int no_microsd[] = {short_blink_ms, long_blink_ms, 0};
+// Blink codes for startup situations
+const int waiting_for_serial[] = {short_blink_ms, 0};
+const int no_seesaw[] = {long_blink_ms, 0};
+const int wrong_seesaw[] = {long_blink_ms, short_blink_ms, 0};
+const int no_VS1053[] = {short_blink_ms, long_blink_ms, 0};
+const int no_microsd[] = {short_blink_ms, long_blink_ms, short_blink_ms, 0};
+const int no_display[] = {long_blink_ms, short_blink_ms, short_blink_ms, 0};
 
 // 160 is low enough to seem silent.
 const uint8_t inaudible = 160;
@@ -87,72 +89,69 @@ void setup()
   pinMode(volume_pin, INPUT);
   pinMode(button_a_pin, INPUT_PULLUP);
 
-  // Blink while waiting for serial while button A is held.
-  // Blink code: short on, short off
-  while (!Serial && !digitalRead(button_a_pin)) {
-    display_text("Waiting for serial", "");
-    digitalWrite(LED_BUILTIN, LOW);
-    delay(short_blink_ms);
-    digitalWrite(LED_BUILTIN, HIGH);
-    delay(short_blink_ms);
+  if (!display_setup()) {
+    while(true) blinkCode(no_display);
   }
+  display_text("", "Booting...");
 
-  display_setup();
+  // Blink while waiting for serial
+  if (waitForSerial()) {
+    // Avoid the delay of writing to the display each loop
+    display_text("Waiting for serial", "Booting...");
+
+    while(waitForSerial()) blinkCode(waiting_for_serial);
+  }
 
   Wire.begin();
 
-  // Search for Seesaw device.
-  // On failure, blink code: long off, short on, short off, long on
-  if (! ss.begin(SEESAW_ADDR) || ! sspixel.begin(SEESAW_ADDR)) {
-    display_text("Cannot find", "encoder");
+  // Search for Seesaw device
+  if (!ss.begin(seesaw_addr) || !sspixel.begin(seesaw_addr)) {
+    display_text("Cannot find encoder", "");
     while(true) blinkCode(no_seesaw);
   }
 
-  // Check that found device is a rotary encoder.
-  // On failure, blink code: long off, long on, short off, long on
+  // Check that found device is a rotary encoder
   uint32_t version = ((ss.getVersion() >> 16) & 0xFFFF);
-  if (version  != 4991){
+  if (version  != 4991) {
     Serial.print("Wrong firmware loaded? Instead of rotary encoder, found product #");
     Serial.println(version);
 
-    while(true) {
-      display_text("Wrong encoder version", "");
-      blinkCode(wrong_seesaw);
-    }
+    display_text("Wrong encoder version", "");
+    while(true) blinkCode(wrong_seesaw);
   }
 
-  // set not so bright!
-  sspixel.setBrightness(10);
+  // Set encoder pixel green while booting
+  sspixel.setPixelColor(0, 0x00ff00);
   sspixel.show();
 
-  // use a pin for the built in encoder switch
-  ss.pinMode(SS_SWITCH, INPUT_PULLUP);
+  // Use a pin for the built in encoder switch
+  ss.pinMode(seesaw_switch_pin, INPUT_PULLUP);
 
-  // get starting position
+  // Get starting position
   encoder_position = ss.getEncoderPosition();
 
   delay(10);
-  ss.setGPIOInterrupts((uint32_t)1 << SS_SWITCH, 1);
+  ss.setGPIOInterrupts((uint32_t)1 << seesaw_switch_pin, 1);
   ss.enableEncoderInterrupt();
 
-  // Initialize music player. On failure, blink code: short off, short on, long off, long on
+  // Initialize music player
   if (!musicPlayer.begin()) {
-    display_text("Cannot find", "VS1053");
+    display_text("Cannot find VS1053", "");
 
     while (true) blinkCode(no_VS1053);
   }
 
-  // Initialize SD card. On failure, blink code: short off, long on
+  // Initialize SD card
   if (!SD.begin(CARDCS)) {
-    display_text("MicroSD failed or not", "present");
+    display_text("MicroSD failed or not present", "");
 
     while (true) blinkCode(no_microsd);
   }
 
-  display_text("Patching VS1053", "");
+  display_text("Patching VS1053", "Booting...");
   musicPlayer.applyPatch(plugin, pluginSize);
 
-  display_text("Loading songs", "");
+  display_text("Loading songs", "Booting...");
   auto root = SD.open("/");
   populateFilenames(root);
   root.close();
@@ -162,6 +161,7 @@ void setup()
     bool operator()(const char* a, const char* b) { return strcmp(a, b) < 0; }
   } compareStrings;
 
+  // Present songs in lexicographic filename order
   std::sort(filenames.begin(), filenames.end(), compareStrings);
 
   if (filenames.size() == 0) {
@@ -169,6 +169,7 @@ void setup()
     while (true) blinkCode(no_microsd);
   }
 
+  // Load song tags
   display_names.reserve(filenames.size());
   for (size_t i = 0; i < filenames.size(); i++) {
     auto file = SD.open(filenames[i]);
@@ -191,13 +192,15 @@ void setup()
     }
   }
 
-  display_text("Loaded songs", "");
+  display_text("Loaded songs", "Booting...");
 
-  // DREQ is on an interrupt pin, so use background audio playing.
+  // DREQ is on an interrupt pin, so use background audio playing
   musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT);
 
-  // Turn LED off now that startup is complete.
+  // Turn LEDs off now that startup is complete
   digitalWrite(LED_BUILTIN, LOW);
+  sspixel.setPixelColor(0, 0x000000);
+  sspixel.show();
 }
 
 void loop()
@@ -225,7 +228,7 @@ void loop()
   }
 
   // Toggle pause on encoder button press.
-  if (encoderButton.update(ss.digitalRead(SS_SWITCH)) && !encoderButton.get()) {
+  if (encoderButton.update(ss.digitalRead(seesaw_switch_pin)) && !encoderButton.get()) {
     paused = !paused;
     musicPlayer.pausePlaying(paused);
 
@@ -397,14 +400,18 @@ float readVolume()
 
 void blinkCode(const int *delays)
 {
-  // Blink (odd on, even off) until encountering 0 length terminator.
+  // Blink (odd off, even on) until encountering 0 length terminator.
   for (int i = 0; delays[i]; i++) {
-    if (i % 2) digitalWrite(LED_BUILTIN, HIGH);
-    else       digitalWrite(LED_BUILTIN, LOW);
+    if (i % 2) digitalWrite(LED_BUILTIN, LOW);
+    else       digitalWrite(LED_BUILTIN, HIGH);
 
     delay(delays[i]);
   }
 
   digitalWrite(LED_BUILTIN, LOW);
   delay(after_pattern_ms);
+}
+
+bool waitForSerial() {
+  return !Serial && !digitalRead(button_a_pin);
 }

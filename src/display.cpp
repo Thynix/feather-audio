@@ -34,12 +34,16 @@ Adafruit_SH1107 display = Adafruit_SH1107(64, 128, &Wire);
 
 void write_display(const char*, const char*);
 
-void display_setup()
+bool display_setup()
 {
-  delay(250); // wait for the OLED to power up
-  display.begin(0x3C, true); // Address 0x3C default
+  // Wait for the OLED to power up
+  delay(250);
 
-  Serial.println("OLED begun");
+  // Address 0x3C default
+  if (!display.begin(0x3C, true)) {
+    Serial.println("Display begin() failed");
+    return false;
+  }
 
   display.setRotation(1);
   display.setTextSize(2);
