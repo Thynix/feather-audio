@@ -309,7 +309,8 @@ void loop()
     display_text(display_names[selected_file_index], "   Paused");
   } else {
     char buf[32];
-    sprintf(buf, "   Vol %d%%", display_volume);
+    // Pad with two spaces to leave room for "100%"
+    sprintf(buf, "  Vol %d%%", display_volume);
     display_text(display_names[selected_file_index], buf);
   }
 
