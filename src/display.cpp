@@ -112,7 +112,6 @@ void display_text(const char* top, const char* bottom)
   }
 
   // Start at scroll offset; cap length to displayable
-  // TODO: Why *2? What is that doing? Without it, every other frame the last character getting a pixel closer to the left is the only change.
   int top_offset = top_scroll ? top_scroll_offset : 0;
   int bottom_offset = bottom_scroll ? bottom_scroll_offset : 0;
 
