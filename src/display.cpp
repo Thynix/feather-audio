@@ -63,7 +63,7 @@ void display_text(const char* top, const char* bottom)
   const int character_width = 7;
   const int characters_per_line = display_width / character_width / 2;
 
-  // Max number of characters that will fit on the screen
+  // Max number of characters that will fit completely on the screen when wrapping lines.
   const int max_top_characters = characters_per_line * 3;
   const int max_bottom_characters = characters_per_line;
 
@@ -113,43 +113,58 @@ void display_text(const char* top, const char* bottom)
 
   // Start at scroll offset; cap length to displayable
   // TODO: Why *2? What is that doing? Without it, every other frame the last character getting a pixel closer to the left is the only change.
-  int top_offset = top_scroll ? top_scroll_offset * 2 : 0;
-  int bottom_offset = bottom_scroll ? bottom_scroll_offset * 2 : 0;
+  int top_offset = top_scroll ? top_scroll_offset : 0;
+  int bottom_offset = bottom_scroll ? bottom_scroll_offset : 0;
 
-  // TODO: Hold for a bit at the start of the string instead of immediately scrolling it away.
-  // TODO: Hold for a bit when showing end of string instead of just continuing to scroll.
-  // TODO: Why am I having to add/subtract offsets specific to each string to get it to continue scrolling the desired amount?
-  //       Only 2 additional character for Title Screen; 8 for Reach For Summit.
-  int top_characters_offset = min(top_offset / character_width, strlen(top));
-  int bottom_characters_offset = min(bottom_offset / character_width, strlen(top));
-  int top_max_offset = strlen(top + top_characters_offset) * character_width;
-  int bottom_max_offset = strlen(bottom + bottom_characters_offset) * character_width;
-
-  // If scrolling has finished going through the entire line, reset scrolling.
-  if (top_offset >= top_max_offset) {
-    top_scroll_frame = 1;
+  const int start_hold = character_width * 2;
+  // Hold for a bit at the start of the string instead of immediately scrolling it away.
+  if (top_offset < start_hold) {
+    top_offset = 0;
+  } else {
+    top_offset -= start_hold;
   }
 
-  if (bottom_offset >= bottom_max_offset) {
-    bottom_scroll_frame = 1;
+  if (bottom_offset < start_hold) {
+    bottom_offset = 0;
+  } else {
+    bottom_offset -= start_hold;
+  }
+
+  // If scrolling has finished going through the entire line, reset scrolling.
+  if (top_offset >= (int)strlen(top) * character_width) {
+    top_scroll_frame = 0;
+  }
+
+  if (bottom_offset >= (int)strlen(bottom) * character_width) {
+    bottom_scroll_frame = 0;
   }
 
   // TODO: Truncate to what actually fits on the display: top_length / bottom_length
-  Serial.printf("Displaying \"%s\" (%03d), \"%s\" (%03d)\r\n",
-                top + min(top_offset / character_width, strlen(top)), top_offset,
-                bottom + (bottom_offset / character_width), bottom_offset);
+  Serial.printf("Displaying \"%s\" (%03d/%d), \"%s\" (%03d/%d)\r\n",
+                top + min(top_offset / character_width, strlen(top)), top_offset, strlen(top),
+                bottom + min(bottom_offset / character_width, strlen(bottom)), bottom_offset, strlen(bottom));
 
   display.clearDisplay();
+
+  // TODO: There's room here for avoiding the duplicated code with a ScrollableTextArea that takes a number of lines and vertical offset.
+
+  // Allow letters to get cut off by display edges only when scrolling.
+  display.setTextWrap(!top_scroll);
 
   display.setCursor(-top_offset, 0);
   display.print(top);
 
-  // TODO: + 2 accounts for... what? Characters being split on the line boundary? Number of lines that need to be scrolled past?
-  display.setCursor(-top_offset, 16);
-  display.print(top + min(characters_per_line + 2, strlen(top)));
+  // Only need to print subsequent scrolled lines when not wrapping.
+  // When wrapping, they're already printed.
+  if (top_scroll) {
+    display.setCursor(-top_offset - display_width, 16);
+    display.print(top);
 
-  display.setCursor(-top_offset, 32);
-  display.print(top + min((characters_per_line + 2) * 2, strlen(top)));
+    display.setCursor(-top_offset - display_width*2, 32);
+    display.print(top);
+  }
+
+  display.setTextWrap(!bottom_scroll);
 
   display.setCursor(-bottom_offset, 48);
   display.println(bottom);
