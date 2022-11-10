@@ -80,14 +80,14 @@ const uint8_t max_volume = 0;
 
 void setup()
 {
+  pinMode(button_a_pin, INPUT_PULLUP);
+  pinMode(volume_pin, INPUT);
+
   // Keep LED on during startup.
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
 
   Serial.begin(115200);
-
-  pinMode(volume_pin, INPUT);
-  pinMode(button_a_pin, INPUT_PULLUP);
 
   if (!display_setup()) {
     while(true) blinkCode(no_display);
