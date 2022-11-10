@@ -109,7 +109,8 @@ void setup()
 
   // Search for Seesaw device
   if (!ss.begin(seesaw_addr) || !sspixel.begin(seesaw_addr)) {
-    display_text("Cannot find encoder", "");
+    display_text("Cannot find encoder",
+                 "Boot failed");
     while(true) blinkCode(no_seesaw);
   }
 
@@ -119,7 +120,8 @@ void setup()
     Serial.print("Wrong firmware loaded? Instead of rotary encoder, found product #");
     Serial.println(version);
 
-    display_text("Wrong encoder version", "");
+    display_text("Wrong encoder version",
+                 "Boot failed");
     while(true) blinkCode(wrong_seesaw);
   }
 
@@ -139,26 +141,35 @@ void setup()
 
   // Initialize music player
   if (!musicPlayer.begin()) {
-    display_text("Cannot find VS1053", "");
+    display_text("Cannot find VS1053",
+                 "Boot failed");
 
     while (true) blinkCode(no_VS1053);
   }
 
   // Initialize SD card
   if (!SD.begin(CARDCS)) {
-    display_text("MicroSD failed or not present", "");
+    display_text("MicroSD failed or not present",
+                 "Boot failed");
 
     while (true) blinkCode(no_microsd);
   }
 
-  display_text("Patching VS1053", "Booting...");
+  display_text("Patching VS1053",
+               "Booting...");
   musicPlayer.applyPatch(plugin, pluginSize);
 
-  display_text("Loading songs", "Booting...");
+  display_text("Loading songs",
+               "Booting...");
   auto root = SD.open("/");
   populateFilenames(root);
   root.close();
   Serial.printf("Found %d songs\r\n", filenames.size());
+
+  char buf[128] = {};
+  snprintf(buf, sizeof(buf), "Loading %u songs", filenames.size());
+  display_text(buf,
+               "Booting...");
 
   struct {
     bool operator()(const char* a, const char* b) { return strcmp(a, b) < 0; }
@@ -168,7 +179,8 @@ void setup()
   std::sort(filenames.begin(), filenames.end(), compareStrings);
 
   if (filenames.size() == 0) {
-    display_text("No songs found", "");
+    display_text("No songs found",
+                 "Boot failed");
     while (true) blinkCode(no_microsd);
   }
 
@@ -195,8 +207,6 @@ void setup()
     }
   }
 
-  display_text("Loaded songs", "Booting...");
-
   // DREQ is on an interrupt pin, so use background audio playing
   musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT);
 
@@ -219,6 +229,7 @@ void loop()
   // Because higher values given to musicPlayer.setVolume() are quieter, so
   // invert scaled ADC. Low ADC numbers give high volume values to be quiet.
   uint8_t volume = (uint8_t) ((1.0f - readVolume()) * inaudible);
+  //uint8_t volume = (uint8_t) (0.5f * inaudible);
 
   // Only change volume setting if the displayed value is different.
   // 0 is 100%; 160 is 0%.
@@ -309,10 +320,12 @@ void loop()
   }
 
   if (paused) {
-    display_text(display_names[selected_file_index], "   Paused");
+    display_text(display_names[selected_file_index],
+                 "    Paused");
   } else {
     char buf[32];
     // Pad with two spaces to leave room for "100%"
+    // TODO: If volume hasn't changed in a bit, display song timestamp and duration instead of volume.
     sprintf(buf, "  Vol %d%%", display_volume);
     display_text(display_names[selected_file_index], buf);
   }
