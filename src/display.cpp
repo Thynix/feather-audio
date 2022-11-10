@@ -50,6 +50,9 @@ bool display_setup()
   display.setTextSize(2);
   display.setTextColor(SH110X_WHITE);
 
+  // Smooth scrolling offsets each line per-pixel.
+  display.setTextWrap(false);
+
   return true;
 }
 
@@ -141,7 +144,12 @@ void display_text(const char* top, const char* bottom)
   display.setCursor(-top_offset, 0);
   display.print(top);
 
-  display.fillRect(0, 48, 128, 16, SH110X_BLACK);
+  // TODO: + 2 accounts for... what? Characters being split on the line boundary? Number of lines that need to be scrolled past?
+  display.setCursor(-top_offset, 16);
+  display.print(top + min(characters_per_line + 2, strlen(top)));
+
+  display.setCursor(-top_offset, 32);
+  display.print(top + min((characters_per_line + 2) * 2, strlen(top)));
 
   display.setCursor(-bottom_offset, 48);
   display.println(bottom);
