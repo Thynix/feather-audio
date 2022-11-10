@@ -56,12 +56,18 @@ bool display_setup()
   return true;
 }
 
-void display_text(const char* top, const char* bottom)
+/*
+ * Writes given text to display, scrolling on subsequent calls it if it's too big to fit.
+ * top displays within 3 lines; bottom within 1.
+ * Returns whether the display was updated.
+ */
+bool display_text(const char* top, const char* bottom)
 {
-  const int previous_line_str_len = 128;
+  const int previous_line_str_len = 256;
+
+  // Scroll speed - frames to wait between scroll movements. See target_frametime.
   const int scroll_frames = 1;
   const int character_width = 7;
-  const int characters_per_line = display_width / character_width / 2;
 
   static char previous_top[previous_line_str_len + 1] = {};
   static char previous_bottom[previous_line_str_len + 1] = {};
@@ -77,7 +83,7 @@ void display_text(const char* top, const char* bottom)
 
   // Do nothing if there are no changes and no scrolling to perform.
   if (!scrolling && !text_changed) {
-    return;
+    return false;
   }
 
   // Reset scrolling - input changed. Ensure a refresh happens, as the text
@@ -104,7 +110,7 @@ void display_text(const char* top, const char* bottom)
   if (!text_changed &&
       previous_top_scroll_offset == top_scroll_offset &&
       previous_bottom_scroll_offset == bottom_scroll_offset) {
-    return;
+    return false;
   }
 
   // Start at scroll offset; cap length to displayable
@@ -134,10 +140,11 @@ void display_text(const char* top, const char* bottom)
     bottom_scroll_frame = 0;
   }
 
-  // TODO: Truncate to what actually fits on the display: top_length / bottom_length
+  /*
   Serial.printf("Displaying \"%s\" (%03d/%d), \"%s\" (%03d/%d)\r\n",
                 top + min(top_offset / character_width, strlen(top)), top_offset, strlen(top),
                 bottom + min(bottom_offset / character_width, strlen(bottom)), bottom_offset, strlen(bottom));
+                */
 
   display.clearDisplay();
 
@@ -165,4 +172,5 @@ void display_text(const char* top, const char* bottom)
   display.println(bottom);
 
   display.display();
+  return true;
 }

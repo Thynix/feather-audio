@@ -63,7 +63,8 @@ const int short_blink_ms = 100;
 const int long_blink_ms = 500;
 const int after_pattern_ms = 1500;
 
-const unsigned long target_frametime = 15;
+// Updating the display is usually at or just under this duration.
+const unsigned long target_frametime = 40;
 
 // Blink codes for startup situations
 const int waiting_for_serial[] = {short_blink_ms, 0};
@@ -223,6 +224,8 @@ void loop()
   static int selected_file_index = -1;
   static unsigned long frame_times[120] = {};
   static int frame_time_index = 0;
+  const unsigned long frame_time_report_interval_ms = 1000;
+  static unsigned long last_frame_time_report;
 
   unsigned long start = millis();
 
@@ -319,35 +322,42 @@ void loop()
     }
   }
 
+  bool display_updated = false;
   if (paused) {
-    display_text(display_names[selected_file_index],
-                 "    Paused");
+    display_updated = display_text(display_names[selected_file_index],
+                                  "    Paused");
   } else {
     char buf[32];
     // Pad with two spaces to leave room for "100%"
     // TODO: If volume hasn't changed in a bit, display song timestamp and duration instead of volume.
     sprintf(buf, "  Vol %d%%", display_volume);
-    display_text(display_names[selected_file_index], buf);
+    display_updated = display_text(display_names[selected_file_index], buf);
   }
 
-  // Display frame time information whenever frame time buffer fills.
-  unsigned long frame_time = millis() - start;
-  if (frame_time_index == COUNT_OF(frame_times)) {
+  unsigned long end = millis();
+  unsigned long frame_time = end - start;
+  bool interval_report = end - last_frame_time_report >= frame_time_report_interval_ms;
+  bool buffer_full = frame_time_index == COUNT_OF(frame_times);
+  if (interval_report) {
     unsigned long total = 0;
-    for (unsigned int i = 0; i < COUNT_OF(frame_times); i++) {
+    for (int i = 0; i < frame_time_index; i++) {
       total += frame_times[i];
     }
 
-    Serial.printf("Average frame time %d ms\n", int(total / ((float)COUNT_OF(frame_times))));
+    Serial.printf("Average display update duration %.1f ms\r\n", total / (float)frame_time_index);
 
     frame_time_index = 0;
+    last_frame_time_report = end;
+  } else if (buffer_full) {
+    frame_time_index = 0;
   }
-  frame_times[frame_time_index++] = frame_time;
+  // Present averages only of display update duration
+  if (display_updated) frame_times[frame_time_index++] = frame_time;
 
   if (frame_time < target_frametime) {
     delay(target_frametime - frame_time);
-  } else if (frame_time > 50) {
-    Serial.printf("Long frame! %d ms\n", frame_time);
+  } else if (frame_time > target_frametime) {
+    Serial.printf("Long frame! %d ms (display updated %d)\r\n", frame_time, display_updated);
   }
 }
 
