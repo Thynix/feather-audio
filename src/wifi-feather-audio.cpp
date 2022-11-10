@@ -111,7 +111,7 @@ void setup()
   // Search for Seesaw device
   if (!ss.begin(seesaw_addr) || !sspixel.begin(seesaw_addr)) {
     display_text("Cannot find encoder",
-                 "Boot failed");
+                 "Boot error");
     while(true) blinkCode(no_seesaw);
   }
 
@@ -122,7 +122,7 @@ void setup()
     Serial.println(version);
 
     display_text("Wrong encoder version",
-                 "Boot failed");
+                 "Boot error");
     while(true) blinkCode(wrong_seesaw);
   }
 
@@ -143,7 +143,7 @@ void setup()
   // Initialize music player
   if (!musicPlayer.begin()) {
     display_text("Cannot find VS1053",
-                 "Boot failed");
+                 "Boot error");
 
     while (true) blinkCode(no_VS1053);
   }
@@ -151,16 +151,16 @@ void setup()
   // Initialize SD card
   if (!SD.begin(CARDCS)) {
     display_text("MicroSD failed or not present",
-                 "Boot failed");
+                 "Boot error");
 
     while (true) blinkCode(no_microsd);
   }
 
-  display_text("Patching VS1053",
+  display_text("Patching\nVS1053",
                "Booting...");
   musicPlayer.applyPatch(plugin, pluginSize);
 
-  display_text("Loading songs",
+  display_text("Finding songs",
                "Booting...");
   auto root = SD.open("/");
   populateFilenames(root);
@@ -168,7 +168,7 @@ void setup()
   Serial.printf("Found %d songs\r\n", filenames.size());
 
   char buf[128] = {};
-  snprintf(buf, sizeof(buf), "Loading %u songs", filenames.size());
+  snprintf(buf, sizeof(buf), "Loading\n%u songs", filenames.size());
   display_text(buf,
                "Booting...");
 
@@ -181,7 +181,7 @@ void setup()
 
   if (filenames.size() == 0) {
     display_text("No songs found",
-                 "Boot failed");
+                 "Boot error");
     while (true) blinkCode(no_microsd);
   }
 
@@ -227,6 +227,8 @@ void loop()
   const unsigned long frame_time_report_interval_ms = 1000;
   static unsigned long last_frame_time_report;
   static unsigned long song_start_time;
+  static unsigned long song_pause_start;
+  static unsigned long song_time_paused;
   static unsigned long last_volume_change;
   const unsigned long volume_change_display_ms = 1000;
 
@@ -240,7 +242,7 @@ void loop()
 
   // Only change volume setting if the displayed value is different.
   // 0 is 100%; 160 is 0%.
-  int display_volume = roundf(100 - (100/160.0)*volume);
+  int display_volume = roundf(100 - (100.0f/inaudible)*volume);
   if (previous_display_volume != display_volume) {
     musicPlayer.setVolume(volume, volume);
     Serial.printf("Set volume %d\n", volume);
@@ -256,10 +258,13 @@ void loop()
 
     // Red if paused, otherwise off.
     if (paused) {
+      song_pause_start = start;
       Serial.println("Pause");
       sspixel.setPixelColor(0, 0xff0000);
     } else {
-      Serial.println("Resume");
+      auto pause_duration = start - song_pause_start;
+      song_time_paused += pause_duration;
+      Serial.printf("Resumed after %lu ms\r\n", song_time_paused);
       sspixel.setPixelColor(0, 0x000000);
     }
     sspixel.show();
@@ -319,6 +324,7 @@ void loop()
       }
 
       song_start_time = start;
+      song_time_paused = 0;
     }
     }
   }
@@ -334,8 +340,7 @@ void loop()
       // Pad with two spaces to leave room for "100%"
       snprintf(buf, sizeof(buf), "  Vol %d%%", display_volume);
     } else {
-      // TODO: Subtract time while paused.
-      int seconds_played = (start - song_start_time) / 1000;
+      int seconds_played = (start - song_start_time - song_time_paused) / 1000;
       // TODO: Instead of hardcoding %02d for song number, determine digits in song count and match it.
       // Playtime in minutes:seconds song number/song count
       snprintf(buf, sizeof(buf), "%d:%02d %02d/%u",
