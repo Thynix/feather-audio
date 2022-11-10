@@ -330,7 +330,7 @@ void loop()
 
   if (frame_time < target_frametime) {
     delay(target_frametime - frame_time);
-  } else {
+  } else if (frame_time > 50) {
     Serial.printf("Long frame! %d ms\n", frame_time);
   }
 }
