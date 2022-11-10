@@ -226,7 +226,11 @@ void loop()
   static int frame_time_index = 0;
   const unsigned long frame_time_report_interval_ms = 1000;
   static unsigned long last_frame_time_report;
+  static unsigned long song_start_time;
+  static unsigned long last_volume_change;
+  const unsigned long volume_change_display_ms = 1000;
 
+  unsigned long start_micros = micros();
   unsigned long start = millis();
 
   // Because higher values given to musicPlayer.setVolume() are quieter, so
@@ -242,6 +246,7 @@ void loop()
     Serial.printf("Set volume %d\n", volume);
 
     previous_display_volume = display_volume;
+    last_volume_change = start;
   }
 
   // Toggle pause on encoder button press.
@@ -281,9 +286,7 @@ void loop()
 
         Serial.print(' ');
         Serial.print(encoder_change);
-
-        encoder_change++;
-      } while (encoder_change < 0);
+      } while (encoder_change++ < 0);
       Serial.printf(" to %d\n", selected_file_index);
     } else if (encoder_change > 0) {
       Serial.printf("From %d previous", selected_file_index);
@@ -296,9 +299,7 @@ void loop()
 
         Serial.print(' ');
         Serial.print(encoder_change);
-
-        encoder_change--;
-      } while (encoder_change > 0);
+      } while (encoder_change-- > 0);
       Serial.printf(" to %d\n", selected_file_index);
     } else {
       changed_song = false;
@@ -311,13 +312,13 @@ void loop()
        */
       musicPlayer.stopPlaying();
       Serial.println(filenames[selected_file_index]);
-      while (!musicPlayer.startPlayingFile(filenames[selected_file_index])) {
-        display_text("Start failed", "");
-        delay(100);
+      if (!musicPlayer.startPlayingFile(filenames[selected_file_index])) {
+        display_text(filenames[selected_file_index], "start failed");
+        delay(1000);
         musicPlayer.stopPlaying();
-        display_text("Retrying", "");
-        delay(100);
       }
+
+      song_start_time = start;
     }
     }
   }
@@ -328,9 +329,16 @@ void loop()
                                   "    Paused");
   } else {
     char buf[32];
-    // Pad with two spaces to leave room for "100%"
-    // TODO: If volume hasn't changed in a bit, display song timestamp and duration instead of volume.
-    sprintf(buf, "  Vol %d%%", display_volume);
+
+    if (start - last_volume_change < volume_change_display_ms) {
+      // Pad with two spaces to leave room for "100%"
+      snprintf(buf, 32, "  Vol %d%%", display_volume);
+    } else {
+      // Playtime in minutes:seconds
+      int seconds_played = (start - song_start_time) / 1000;
+      snprintf(buf, 32, "%d:%02d", seconds_played / 60, seconds_played % 60);
+    }
+
     display_updated = display_text(display_names[selected_file_index], buf);
   }
 
@@ -357,7 +365,7 @@ void loop()
   if (frame_time < target_frametime) {
     delay(target_frametime - frame_time);
   } else if (frame_time > target_frametime) {
-    Serial.printf("Long frame! %d ms (display updated %d)\r\n", frame_time, display_updated);
+    Serial.printf("Long frame! %.1f ms (display updated %d)\r\n", (micros() - start_micros) / 1000.0f, display_updated);
   }
 }
 
@@ -404,7 +412,7 @@ accept_entry:
 
 float readVolume()
 {
-  const int volumeReads = 200;
+  const int volumeReads = 50;
 
   uint32_t readTotal = 0;
   for (int i = 0; i < volumeReads; i++)
