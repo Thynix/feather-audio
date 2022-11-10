@@ -286,7 +286,7 @@ void loop()
 
         Serial.print(' ');
         Serial.print(encoder_change);
-      } while (encoder_change++ < 0);
+      } while (++encoder_change < 0);
       Serial.printf(" to %d\n", selected_file_index);
     } else if (encoder_change > 0) {
       Serial.printf("From %d previous", selected_file_index);
@@ -299,7 +299,7 @@ void loop()
 
         Serial.print(' ');
         Serial.print(encoder_change);
-      } while (encoder_change-- > 0);
+      } while (--encoder_change > 0);
       Serial.printf(" to %d\n", selected_file_index);
     } else {
       changed_song = false;
@@ -332,11 +332,15 @@ void loop()
 
     if (start - last_volume_change < volume_change_display_ms) {
       // Pad with two spaces to leave room for "100%"
-      snprintf(buf, 32, "  Vol %d%%", display_volume);
+      snprintf(buf, sizeof(buf), "  Vol %d%%", display_volume);
     } else {
-      // Playtime in minutes:seconds
+      // TODO: Subtract time while paused.
       int seconds_played = (start - song_start_time) / 1000;
-      snprintf(buf, 32, "%d:%02d", seconds_played / 60, seconds_played % 60);
+      // TODO: Instead of hardcoding %02d for song number, determine digits in song count and match it.
+      // Playtime in minutes:seconds song number/song count
+      snprintf(buf, sizeof(buf), "%d:%02d %02d/%u",
+               seconds_played / 60, seconds_played % 60,
+               selected_file_index + 1, filenames.size());
     }
 
     display_updated = display_text(display_names[selected_file_index], buf);
