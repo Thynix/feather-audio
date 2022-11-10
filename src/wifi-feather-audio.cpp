@@ -90,7 +90,10 @@ void setup()
   Serial.begin(115200);
 
   if (!display_setup()) {
-    while(true) blinkCode(no_display);
+    while(true) { 
+      Serial.println("Display setup failed");
+      blinkCode(no_display);
+    }
   }
   display_text("", "Booting...");
 
