@@ -79,6 +79,10 @@ const uint8_t inaudible = 160;
 const uint8_t silent = 255;
 const uint8_t max_volume = 0;
 
+// Boot status messages for the bottom line.
+const char* const booting = "Booting...";
+const char* const boot_error = "Boot error";
+
 void setup()
 {
   pinMode(button_a_pin, INPUT_PULLUP);
@@ -96,12 +100,12 @@ void setup()
       blinkCode(no_display);
     }
   }
-  display_text("", "Booting...");
+  display_text("", booting);
 
   // Blink while waiting for serial
   if (waitForSerial()) {
     // Avoid the delay of writing to the display each loop
-    display_text("Waiting for serial", "Booting...");
+    display_text("Waiting for serial", booting);
 
     while(waitForSerial()) blinkCode(waiting_for_serial);
   }
@@ -110,8 +114,7 @@ void setup()
 
   // Search for Seesaw device
   if (!ss.begin(seesaw_addr) || !sspixel.begin(seesaw_addr)) {
-    display_text("Cannot find encoder",
-                 "Boot error");
+    display_text("Cannot find encoder", boot_error);
     while(true) blinkCode(no_seesaw);
   }
 
@@ -121,8 +124,7 @@ void setup()
     Serial.print("Wrong firmware loaded? Instead of rotary encoder, found product #");
     Serial.println(version);
 
-    display_text("Wrong encoder version",
-                 "Boot error");
+    display_text("Wrong encoder version", boot_error);
     while(true) blinkCode(wrong_seesaw);
   }
 
@@ -142,35 +144,29 @@ void setup()
 
   // Initialize music player
   if (!musicPlayer.begin()) {
-    display_text("Cannot find VS1053",
-                 "Boot error");
+    display_text("Cannot find VS1053", boot_error);
 
     while (true) blinkCode(no_VS1053);
   }
 
   // Initialize SD card
   if (!SD.begin(CARDCS)) {
-    display_text("MicroSD failed or not present",
-                 "Boot error");
+    display_text("MicroSD failed or not present", boot_error);
 
     while (true) blinkCode(no_microsd);
   }
 
-  display_text("Patching\nVS1053",
-               "Booting...");
+  display_text("Patching\nVS1053", booting);
   musicPlayer.applyPatch(plugin, pluginSize);
 
-  display_text("Finding songs",
-               "Booting...");
+  display_text("Finding\nsongs", booting);
   auto root = SD.open("/");
   populateFilenames(root);
   root.close();
-  Serial.printf("Found %d songs\r\n", filenames.size());
 
   char buf[128] = {};
   snprintf(buf, sizeof(buf), "Loading\n%u songs", filenames.size());
-  display_text(buf,
-               "Booting...");
+  display_text(buf, booting);
 
   struct {
     bool operator()(const char* a, const char* b) { return strcmp(a, b) < 0; }
@@ -180,8 +176,7 @@ void setup()
   std::sort(filenames.begin(), filenames.end(), compareStrings);
 
   if (filenames.size() == 0) {
-    display_text("No songs found",
-                 "Boot error");
+    display_text("No songs found", boot_error);
     while (true) blinkCode(no_microsd);
   }
 
