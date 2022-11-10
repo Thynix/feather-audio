@@ -59,21 +59,17 @@ bool display_setup()
 void display_text(const char* top, const char* bottom)
 {
   const int previous_line_str_len = 128;
-  const int scroll_frames = 10;
+  const int scroll_frames = 1;
   const int character_width = 7;
   const int characters_per_line = display_width / character_width / 2;
-
-  // Max number of characters that will fit completely on the screen when wrapping lines.
-  const int max_top_characters = characters_per_line * 3;
-  const int max_bottom_characters = characters_per_line;
 
   static char previous_top[previous_line_str_len + 1] = {};
   static char previous_bottom[previous_line_str_len + 1] = {};
   static int top_scroll_frame = 0;
   static int bottom_scroll_frame = 0;
 
-  bool top_scroll = strlen(top) > max_top_characters;
-  bool bottom_scroll = strlen(bottom) > max_bottom_characters;
+  bool top_scroll = strlen(top) * character_width > display_width;
+  bool bottom_scroll = strlen(bottom) * character_width > display_width;
   bool scrolling = top_scroll || bottom_scroll;
   bool top_changed = strcmp(previous_top, top);
   bool bottom_changed = strcmp(previous_bottom, bottom);
