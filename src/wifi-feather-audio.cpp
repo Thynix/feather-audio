@@ -80,8 +80,8 @@ const uint8_t silent = 255;
 const uint8_t max_volume = 0;
 
 // Boot status messages for the bottom line.
-const char* const booting = "Booting...";
-const char* const boot_error = "Boot error";
+const char* const booting = "Boot";
+const char* const boot_error = "Sad";
 
 void setup()
 {
@@ -156,16 +156,16 @@ void setup()
     while (true) blinkCode(no_microsd);
   }
 
-  display_text("Patching\nVS1053", booting);
+  display_text("Patching VS1053", booting);
   musicPlayer.applyPatch(plugin, pluginSize);
 
-  display_text("Finding\nsongs", booting);
+  display_text("Finding songs", booting);
   auto root = SD.open("/");
   populateFilenames(root);
   root.close();
 
   char buf[128] = {};
-  snprintf(buf, sizeof(buf), "Loading\n%u songs", filenames.size());
+  snprintf(buf, sizeof(buf), "Loading %u songs", filenames.size());
   display_text(buf, booting);
 
   struct {
