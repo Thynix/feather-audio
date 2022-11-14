@@ -80,8 +80,8 @@ const uint8_t silent = 255;
 const uint8_t max_volume = 0;
 
 // Boot status messages for the bottom line.
-const char* const booting = "Boot";
-const char* const boot_error = "Sad";
+const char* const booting    = "Booting...";
+const char* const boot_error = "Boot error";
 
 void setup()
 {
@@ -95,11 +95,12 @@ void setup()
   Serial.begin(115200);
 
   if (!display_setup()) {
-    while(true) { 
+    while(true) {
       Serial.println("Display setup failed");
       blinkCode(no_display);
     }
   }
+  // TODO: Why is the bottom line too low during setup but not after?
   display_text("", booting);
 
   // Blink while waiting for serial
@@ -333,7 +334,7 @@ void loop()
 
     if (start - last_volume_change < volume_change_display_ms) {
       // Pad with two spaces to leave room for "100%"
-      snprintf(buf, sizeof(buf), "  Vol %d%%", display_volume);
+      snprintf(buf, sizeof(buf), "    Vol %d%%", display_volume);
     } else {
       int seconds_played = (start - song_start_time - song_time_paused) / 1000;
       // TODO: Instead of hardcoding %02d for song number, determine digits in song count and match it.
