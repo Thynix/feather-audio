@@ -85,7 +85,6 @@ const char* const boot_error = "Boot error";
 
 void setup()
 {
-  pinMode(button_a_pin, INPUT_PULLUP);
   pinMode(volume_pin, INPUT);
 
   // Keep LED on during startup.
@@ -93,6 +92,17 @@ void setup()
   digitalWrite(LED_BUILTIN, HIGH);
 
   Serial.begin(115200);
+
+#if 0
+  // Blink while waiting for serial
+  if (!Serial) {
+    display_setup();
+    while(!Serial) {
+      display_text("Waiting for serial", booting);
+      blinkCode(waiting_for_serial);
+    }
+  }
+#endif
 
   if (!display_setup()) {
     while(true) {
@@ -102,14 +112,6 @@ void setup()
   }
   // TODO: Why is the bottom line too low during setup but not after?
   display_text("", booting);
-
-  // Blink while waiting for serial
-  if (waitForSerial()) {
-    // Avoid the delay of writing to the display each loop
-    display_text("Waiting for serial", booting);
-
-    while(waitForSerial()) blinkCode(waiting_for_serial);
-  }
 
   Wire.begin();
 
@@ -450,8 +452,4 @@ void blinkCode(const int *delays)
 
   digitalWrite(LED_BUILTIN, LOW);
   delay(after_pattern_ms);
-}
-
-bool waitForSerial() {
-  return !Serial && !digitalRead(button_a_pin);
 }
