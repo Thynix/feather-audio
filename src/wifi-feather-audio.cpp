@@ -49,6 +49,8 @@ const char* const accepted_extensions[] = {
   ".MP3", ".mp3",
   ".OGG", ".ogg",
   ".FLA", ".fla",
+  ".WAV", ".wav",
+  ".M4A", ".m4a",
 };
 
 const uint8_t seesaw_addr = 0x36;
@@ -197,12 +199,11 @@ void setup()
       free((void*)artist);
       display_names[i] = display_name;
     } else {
-      // Remove extension from filename
-      char *filename = (char*) malloc(strlen(filenames[i]) + 1 - 4);
-      strcpy(filename, filenames[i]);
-      filename[strlen(filenames[i]) - 4] = '\0';
-      free((void*)filenames[i]);
-      display_names[i] = filename;
+      // Remove extension from filename in the absence of tags
+      char *display_name = (char*) malloc(strlen(filenames[i]) + 1 - 4);
+      strcpy(display_name, filenames[i]);
+      display_name[strlen(filenames[i]) - 4] = '\0';
+      display_names[i] = display_name;
     }
   }
 
@@ -314,7 +315,8 @@ void loop()
        *       attempt to follow the datasheet in _datasheet_stopping broke stopping.
        */
       musicPlayer.stopPlaying();
-      Serial.println(filenames[selected_file_index]);
+      Serial.printf("Filename: '%s'\r\n", filenames[selected_file_index]);
+      Serial.printf("Display name: '%s'\r\n", display_names[selected_file_index]);
       if (!musicPlayer.startPlayingFile(filenames[selected_file_index])) {
         display_text(filenames[selected_file_index], "start failed");
         delay(1000);
