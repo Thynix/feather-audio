@@ -341,23 +341,24 @@ void loop()
   }
 
   bool display_updated = false;
-  if (paused) {
+  if (start - last_volume_change < volume_change_display_ms) {
+      char buf[32];
+      // Pad with two spaces to leave room for "100%"
+      snprintf(buf, sizeof(buf), "    Vol %d%%", display_volume);
+
+      display_updated = display_text(display_names[selected_file_index], buf);
+  } else if (paused) {
     display_updated = display_text(display_names[selected_file_index],
                                   "    Paused");
   } else {
     char buf[32];
 
-    if (start - last_volume_change < volume_change_display_ms) {
-      // Pad with two spaces to leave room for "100%"
-      snprintf(buf, sizeof(buf), "    Vol %d%%", display_volume);
-    } else {
       int seconds_played = (start - song_start_time - song_time_paused) / 1000;
       // TODO: Instead of hardcoding %02d for song number, determine digits in song count and match it.
       // Playtime in minutes:seconds song number/song count
       snprintf(buf, sizeof(buf), "%d:%02d %02d/%u",
                seconds_played / 60, seconds_played % 60,
                selected_file_index + 1, filenames.size());
-    }
 
     display_updated = display_text(display_names[selected_file_index], buf);
   }
