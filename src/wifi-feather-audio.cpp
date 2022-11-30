@@ -200,9 +200,11 @@ void setup()
       display_names[i] = display_name;
     } else {
       // Remove extension from filename in the absence of tags
-      char *display_name = (char*) malloc(strlen(filenames[i]) + 1 - 4);
-      strcpy(display_name, filenames[i]);
-      display_name[strlen(filenames[i]) - 4] = '\0';
+      // +1 for null terminator; -4 for ".mp3" or similar
+      size_t len = strlen(filenames[i]) + 1 - 4;
+      char *display_name = (char*) malloc(len);
+      strncpy(display_name, filenames[i], len);
+      display_name[len - 1] = '\0';
       display_names[i] = display_name;
     }
   }
