@@ -13,6 +13,7 @@
 #include <algorithm>
 #define MP3_ID3_TAGS_IMPLEMENTATION
 #include <mp3_id3_tags.h>
+#include <Adafruit_SleepyDog.h>
 
 #define COUNT_OF(x) ((sizeof(x)/sizeof(0[x])) / ((size_t)(!(sizeof(x) % sizeof(0[x])))))
 
@@ -212,6 +213,12 @@ void setup()
   // DREQ is on an interrupt pin, so use background audio playing
   musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT);
 
+  // Enable watchdog before entering loop()
+  int countdownMS = Watchdog.enable(4000);
+  Serial.print("Watchdog timer set for ");
+  Serial.print(countdownMS, DEC);
+  Serial.println(" milliseconds");
+
   // Turn LEDs off now that startup is complete
   digitalWrite(LED_BUILTIN, LOW);
   sspixel.setPixelColor(0, 0x000000);
@@ -232,6 +239,8 @@ void loop()
   static unsigned long song_time_paused;
   static unsigned long last_volume_change;
   const unsigned long volume_change_display_ms = 1000;
+
+  Watchdog.reset();
 
   unsigned long start_micros = micros();
   unsigned long start = millis();
