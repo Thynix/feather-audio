@@ -166,6 +166,7 @@ void setup()
   musicPlayer.applyPatch(plugin, pluginSize);
 
   display_text("Finding songs", booting);
+  unsigned long load_start = millis();
   auto root = SD.open("/");
   populateFilenames(root);
   root.close();
@@ -210,6 +211,8 @@ void setup()
     }
   }
 
+  Serial.printf("Songs loaded in %lu ms\r\n", millis() - load_start);
+
   // DREQ is on an interrupt pin, so use background audio playing
   musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT);
 
@@ -232,7 +235,9 @@ void loop()
   static int selected_file_index = -1;
   static unsigned long frame_times[120] = {};
   static int frame_time_index = 0;
-  const unsigned long frame_time_report_interval_ms = 1000;
+  static unsigned long idle_frame_times[120] = {};
+  static int idle_frame_time_index = 0;
+  const unsigned long frame_time_report_interval_ms = 5000;
   static unsigned long last_frame_time_report;
   static unsigned long song_start_time;
   static unsigned long song_pause_start;
@@ -367,25 +372,35 @@ void loop()
   unsigned long frame_time = end - start;
   bool interval_report = end - last_frame_time_report >= frame_time_report_interval_ms;
   bool buffer_full = frame_time_index == COUNT_OF(frame_times);
+  bool idle_buffer_full = idle_frame_time_index == COUNT_OF(idle_frame_times);
   if (interval_report) {
     unsigned long total = 0;
     for (int i = 0; i < frame_time_index; i++) {
       total += frame_times[i];
     }
 
-    Serial.printf("Average display update duration %.1f ms\r\n", total / (float)frame_time_index);
+    unsigned long idle_total = 0;
+    for (int i = 0; i < idle_frame_time_index; i++) {
+      idle_total += idle_frame_times[i];
+    }
 
-    frame_time_index = 0;
+    Serial.printf("Average update duration: display %02.1f ms | idle %02.1f ms\r\n",
+                  total / max((float)frame_time_index, 1.0f),
+                  idle_total / max((float)idle_frame_time_index, 1.0f));
+
     last_frame_time_report = end;
-  } else if (buffer_full) {
-    frame_time_index = 0;
   }
+
+  if (buffer_full) frame_time_index = 0;
+  if (idle_buffer_full) frame_time_index = 0;
+
   // Present averages only of display update duration
   if (display_updated) frame_times[frame_time_index++] = frame_time;
+  else idle_frame_times[idle_frame_time_index++] = frame_time;
 
   if (frame_time < target_frametime) {
     delay(target_frametime - frame_time);
-  } else if (frame_time > target_frametime) {
+  } else if (frame_time > 100) {
     Serial.printf("Long frame! %.1f ms (display updated %d)\r\n", (micros() - start_micros) / 1000.0f, display_updated);
   }
 }
