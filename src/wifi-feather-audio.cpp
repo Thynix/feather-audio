@@ -250,9 +250,9 @@ void loop()
   static bool paused = false;
   static int previous_display_volume = -1;
   static int selected_file_index = -1;
-  static unsigned long frame_times[120] = {};
+  static unsigned long frame_times[2000] = {};
   static int frame_time_index = 0;
-  static unsigned long idle_frame_times[120] = {};
+  static unsigned long idle_frame_times[2000] = {};
   static int idle_frame_time_index = 0;
   const unsigned long frame_time_report_interval_ms = 5000;
   static unsigned long last_frame_time_report;
@@ -392,20 +392,30 @@ void loop()
   bool idle_buffer_full = idle_frame_time_index == COUNT_OF(idle_frame_times);
   if (interval_report) {
     unsigned long total = 0;
+    unsigned long max_display = 0;
     for (int i = 0; i < frame_time_index; i++) {
       total += frame_times[i];
+      if (frame_times[i] > max_display) max_display = frame_times[i];
     }
 
     unsigned long idle_total = 0;
+    unsigned long max_idle = 0;
     for (int i = 0; i < idle_frame_time_index; i++) {
       idle_total += idle_frame_times[i];
+      if (idle_frame_times[i] > max_idle) max_idle = idle_frame_times[i];
     }
 
-    Serial.printf("Average update duration: display %02.1f ms | idle %02.1f ms\r\n",
+    Serial.printf("Update duration: DISPLAY mean %02.1f ms, max %lu ms | IDLE %02.1f ms, max %lu ms \r\n",
                   total / max((float)frame_time_index, 1.0f),
-                  idle_total / max((float)idle_frame_time_index, 1.0f));
+                  max_display,
+                  idle_total / max((float)idle_frame_time_index, 1.0f),
+                  max_idle);
 
     last_frame_time_report = end;
+
+    // Don't reconsider the same collection of frame times.
+    buffer_full = true;
+    idle_buffer_full = true;
   }
 
   if (buffer_full) frame_time_index = 0;
