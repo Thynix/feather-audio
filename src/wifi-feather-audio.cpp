@@ -15,6 +15,7 @@
 #include <mp3_id3_tags.h>
 #include <Adafruit_SleepyDog.h>
 #include <Adafruit_TinyUSB.h>
+#include <mass_storage.h>
 
 #define COUNT_OF(x) ((sizeof(x)/sizeof(0[x])) / ((size_t)(!(sizeof(x) % sizeof(0[x])))))
 
@@ -94,6 +95,8 @@ void setup()
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
 
+  mass_storage_init();
+
   Serial.begin(115200);
 
 #if 0
@@ -158,6 +161,12 @@ void setup()
   // Initialize SD card
   if (!SD.begin(CARDCS)) {
     display_text("MicroSD failed or not present", boot_error);
+
+    while (true) blinkCode(no_microsd);
+  }
+
+  if (!mass_storage_begin(CARDCS)) {
+    display_text("Mass storage failed", boot_error);
 
     while (true) blinkCode(no_microsd);
   }
