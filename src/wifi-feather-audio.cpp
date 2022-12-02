@@ -14,6 +14,7 @@
 #define MP3_ID3_TAGS_IMPLEMENTATION
 #include <mp3_id3_tags.h>
 #include <Adafruit_SleepyDog.h>
+#include <Adafruit_TinyUSB.h>
 
 #define COUNT_OF(x) ((sizeof(x)/sizeof(0[x])) / ((size_t)(!(sizeof(x) % sizeof(0[x])))))
 
@@ -22,7 +23,6 @@ File file;
 void populateFilenames(File);
 void blinkCode(const int *);
 float readVolume();
-bool waitForSerial();
 
 Adafruit_VS1053_FilePlayer musicPlayer =
   Adafruit_VS1053_FilePlayer(VS1053_RESET, VS1053_CS, VS1053_DCS, VS1053_DREQ, CARDCS);
@@ -100,10 +100,10 @@ void setup()
   // Blink while waiting for serial
   if (!Serial) {
     display_setup();
-    while(!Serial) {
+    do {
       display_text("Waiting for serial", booting);
       blinkCode(waiting_for_serial);
-    }
+    } while (!Serial);
   }
 #endif
 
