@@ -202,10 +202,18 @@ void setup()
     auto file = SD.open(filenames[i]);
     if (mp3_id3_file_has_tags(&file)) {
       const char* title = mp3_id3_file_read_tag(&file, MP3_ID3_TAG_TITLE);
+      const char* album = mp3_id3_file_read_tag(&file, MP3_ID3_TAG_ALBUM);
       const char* artist = mp3_id3_file_read_tag(&file, MP3_ID3_TAG_ARTIST);
-      const size_t display_name_len = 128;
+      const size_t display_name_len = 256;
       char *display_name = (char*)malloc(display_name_len);
-      snprintf(display_name, display_name_len, "%s - %s", title, artist);
+
+      // Songs are liable to not have an album set if manually tagged.
+      if (strlen(album)) {
+        snprintf(display_name, display_name_len, "%s by %s in %s", title, artist, album);
+      } else {
+        snprintf(display_name, display_name_len, "%s by %s", title, artist);
+      }
+
       free((void*)title);
       free((void*)artist);
       display_names[i] = display_name;
