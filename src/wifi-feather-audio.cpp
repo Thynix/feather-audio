@@ -180,10 +180,6 @@ void setup()
   populateFilenames(root);
   root.close();
 
-  char buf[128] = {};
-  snprintf(buf, sizeof(buf), "Loading %u songs", filenames.size());
-  display_text(buf, booting);
-
   struct {
     bool operator()(const char* a, const char* b) { return strcmp(a, b) < 0; }
   } compareStrings;
@@ -197,8 +193,12 @@ void setup()
   }
 
   // Load song tags
+  char buf[128] = {};
   display_names.reserve(filenames.size());
   for (size_t i = 0; i < filenames.size(); i++) {
+    snprintf(buf, sizeof(buf), "Loading song %u / %u", i + 1, filenames.size());
+    display_text(buf, booting);
+
     auto file = SD.open(filenames[i]);
     if (mp3_id3_file_has_tags(&file)) {
       const char* title = mp3_id3_file_read_tag(&file, MP3_ID3_TAG_TITLE);
