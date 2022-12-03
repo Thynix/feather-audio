@@ -18,6 +18,8 @@ private:
   int scroll_frame_interval;
   // How much lower is a subsequent line below the previous?
   uint8_t y_advance;
+  // How much horizontal space within the area can contain text?
+  int horizontal_scroll_space;
 
   char previous_text[previous_text_str_len + 1] = {};
   bool needs_scrolling;
@@ -35,9 +37,11 @@ public:
     this->font = font;
     this->font_scale = font_scale;
     this->scroll_frame_interval = scroll_frame_interval;
+
     // Default built-in font is NULL and 6x8.
-    this->y_advance = font ? font->yAdvance : font_scale * 8;
-    this->line_count = max(height / y_advance, 1);
+    y_advance = font ? font->yAdvance : font_scale * 8;
+    line_count = max(height / y_advance, 1);
+    horizontal_scroll_space = display_width * line_count;
   }
 
   // Display text, and scroll if necessary on repeated calls.
@@ -71,7 +75,10 @@ public:
       display.setTextWrap(false);
       display.getTextBounds(text, 0, 0, &x1, &y1, &total_text_width, &font_height);
 
-      needs_scrolling = wrap_height > height;
+      //Serial.printf("%hu / %d pixels for '%s'", total_text_width, horizontal_scroll_space, text);
+      //Serial.println();
+
+      needs_scrolling = total_text_width > horizontal_scroll_space;
     } else {
       // No text change, but may need to scroll if the frame advanced past the interval.
       scroll_frame++;
@@ -90,7 +97,7 @@ public:
     // Hold for this many frame intervals at the start/end of the string instead of immediately continuing.
     const int ends_hold = 14;
     // How much offset is needed for the end of the text to be displayed
-    uint16_t text_overflow = (total_text_width % display_width) + 1;
+    uint16_t text_overflow = total_text_width - horizontal_scroll_space + 1;
     if (offset <= ends_hold) {
       // Hold at start
       offset = 0;
