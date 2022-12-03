@@ -9,7 +9,7 @@ const int display_height = 64;
 
 Adafruit_SH1107 display = Adafruit_SH1107(display_height, display_width, &Wire);
 
-const int previous_text_str_len = 255;
+const int previous_text_str_len = 512;
 
 class ScrollArea {
 private:

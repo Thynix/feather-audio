@@ -204,7 +204,7 @@ void setup()
       const char* title = mp3_id3_file_read_tag(&file, MP3_ID3_TAG_TITLE);
       const char* album = mp3_id3_file_read_tag(&file, MP3_ID3_TAG_ALBUM);
       const char* artist = mp3_id3_file_read_tag(&file, MP3_ID3_TAG_ARTIST);
-      const size_t display_name_len = 256;
+      const size_t display_name_len = 512 + 1;
       char *display_name = (char*)malloc(display_name_len);
 
       // Songs are liable to not have an album set if manually tagged.
@@ -226,6 +226,8 @@ void setup()
       display_name[len - 1] = '\0';
       display_names[i] = display_name;
     }
+
+    Serial.println(display_names[i]);
   }
 
   Serial.printf("Songs loaded in %lu ms\r\n", millis() - load_start);
