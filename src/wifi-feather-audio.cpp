@@ -30,16 +30,8 @@ Adafruit_VS1053_FilePlayer musicPlayer =
 
 const int debounce_ms = 100;
 Debouncer encoderButton(debounce_ms);
-Debouncer toggleLeftChannelButton(debounce_ms);
-Debouncer toggleRightChannelButton(debounce_ms);
 
 const uint8_t volume_pin = A2;
-
-// Feather M4 pins
-// Also used for VS1053 - can't use these while using it.
-const uint8_t button_a_pin = 9;
-const uint8_t button_b_pin = 6;
-const uint8_t button_c_pin = 5;
 
 const int fileStackSize = 5;
 int fileIndex = 0;
@@ -68,7 +60,7 @@ const int long_blink_ms = 500;
 const int after_pattern_ms = 1500;
 
 // Updating the display is usually at or just under this duration.
-const unsigned long target_frametime = 40;
+const unsigned long target_frametime_micros = 40000;
 
 // Blink codes for startup situations
 const int waiting_for_serial[] = {short_blink_ms, 0};
@@ -235,13 +227,6 @@ void setup()
 
   Serial.printf("Songs loaded in %lu ms\r\n", millis() - load_start);
 
-  // DREQ is on an interrupt pin, so use background audio playing
-  if (!musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT)) {
-    Serial.println("Failed to set VS1053 interrupt");
-    display_text("VS1053 interrupts error", boot_error);
-    while (true) blinkCode(no_VS1053);
-  }
-
   // Enable watchdog before entering loop()
   int countdown_milliseconds = Watchdog.enable(4000);
   Serial.print("Watchdog timer set for ");
@@ -271,10 +256,11 @@ void loop()
   static unsigned long last_volume_change;
   const unsigned long volume_change_display_ms = 1000;
 
-  Watchdog.reset();
-
   unsigned long start_micros = micros();
   unsigned long start = millis();
+
+  Watchdog.reset();
+  musicPlayer.feedBuffer();
 
   // Because higher values given to musicPlayer.setVolume() are quieter, so
   // invert scaled ADC. Low ADC numbers give high volume values to be quiet.
@@ -434,9 +420,10 @@ void loop()
   if (display_updated) frame_times[frame_time_index++] = frame_time;
   else idle_frame_times[idle_frame_time_index++] = frame_time;
 
-  if (frame_time < target_frametime) {
-    delay(target_frametime - frame_time);
-  } else if (frame_time > 100) {
+  auto micros_frame_time = micros() - start_micros;
+  if (micros_frame_time < target_frametime_micros) {
+    delayMicroseconds(target_frametime_micros - micros_frame_time);
+  } else if (frame_time > 60) {
     Serial.printf("Long frame! %.1f ms (display updated %d)\r\n", (micros() - start_micros) / 1000.0f, display_updated);
   }
 }
