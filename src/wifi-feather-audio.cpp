@@ -84,7 +84,7 @@ const uint8_t silent = 255;
 const uint8_t max_volume = 0;
 
 // Boot status messages for the bottom line.
-const char* const booting    = "Booting...";
+const char* const booting    = "Boot";
 const char* const boot_error = "Boot error";
 
 void setup()
@@ -95,6 +95,7 @@ void setup()
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
 
+  // TODO: Do this, and don't try playing music at the same time, only on button press.
   mass_storage_init();
 
   Serial.begin(115200);
@@ -110,13 +111,10 @@ void setup()
   }
 #endif
 
-  if (!display_setup()) {
-    while(true) {
-      Serial.println("Display setup failed");
-      blinkCode(no_display);
-    }
+  while (!display_setup()) {
+    Serial.println("Display setup failed");
+    blinkCode(no_display);
   }
-  // TODO: Why is the bottom line too low during setup but not after?
   display_text("", booting);
 
   Wire.begin();
@@ -152,10 +150,14 @@ void setup()
   ss.enableEncoderInterrupt();
 
   // Initialize music player
-  if (!musicPlayer.begin()) {
-    display_text("Cannot find VS1053", boot_error);
+  for (int tries = 0; !musicPlayer.begin(); tries++) {
+    if (tries == 5) {
+      display_text("Failed to find VS105", boot_error);
+      while (true) blinkCode(no_VS1053);
+    }
 
-    while (true) blinkCode(no_VS1053);
+    display_text("Retrying VS1053", booting);
+    blinkCode(no_VS1053);
   }
 
   // Initialize SD card
@@ -193,6 +195,7 @@ void setup()
   }
 
   // Load song tags
+  // TODO: do this lazily? nah, it'd make things less responsive once it's running.
   char buf[128] = {};
   display_names.reserve(filenames.size());
   for (size_t i = 0; i < filenames.size(); i++) {
@@ -233,12 +236,16 @@ void setup()
   Serial.printf("Songs loaded in %lu ms\r\n", millis() - load_start);
 
   // DREQ is on an interrupt pin, so use background audio playing
-  musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT);
+  if (!musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT)) {
+    Serial.println("Failed to set VS1053 interrupt");
+    display_text("VS1053 interrupts error", boot_error);
+    while (true) blinkCode(no_VS1053);
+  }
 
   // Enable watchdog before entering loop()
-  int countdownMS = Watchdog.enable(4000);
+  int countdown_milliseconds = Watchdog.enable(4000);
   Serial.print("Watchdog timer set for ");
-  Serial.print(countdownMS, DEC);
+  Serial.print(countdown_milliseconds);
   Serial.println(" milliseconds");
 
   // Turn LEDs off now that startup is complete
