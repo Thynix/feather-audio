@@ -14,4 +14,15 @@ encoder for song control, and potentiometer for volume.
 * Feather M4 Express - https://www.adafruit.com/product/3857
 * Music Maker FeatherWing - https://www.adafruit.com/product/3436 or https://www.adafruit.com/product/3357
 
-Optional: Solar / Lithium Ion Polymer Charger - https://www.adafruit.com/product/4755
+Optional:
+
+### Solar / Lithium Ion Polymer Charger - https://www.adafruit.com/product/4755
+
+Easier portability between battery, solar power, and more easily accessible USB
+port for power.
+
+### Tactile button - https://www.adafruit.com/product/1119 or similar
+
+Pulling pin 12 to ground stops playback and enters mass storage mode to offer
+the MicroSD card over USB. This is extremely slow, but avoids the need to
+remove the card and offers status information to make it more bearable.
