@@ -1,8 +1,13 @@
-#include <SPI.h>
-#include <Wire.h>
+#include <display.h>
+
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH110X.h>
 #include <Fonts/FreeSansBold9pt7b.h>
+#include <SPI.h>
+#include <Wire.h>
+#include <led.h>
+
+const int no_display[] = {long_blink_ms, short_blink_ms, short_blink_ms, 0};
 
 const int display_width = 128;
 const int display_height = 64;
@@ -146,12 +151,11 @@ bool display_setup()
 
   // Address 0x3C default
   if (!display.begin(0x3C, true)) {
-    Serial.println("Display begin() failed");
+    led_blinkCode(no_display);
     return false;
   }
 
   display.setRotation(1);
-
   display.setTextColor(SH110X_WHITE);
 
   return true;

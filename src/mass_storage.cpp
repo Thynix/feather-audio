@@ -9,22 +9,50 @@
  any redistribution
 *********************************************************************/
 
-#include <SD.h>
+#include <mass_storage.h>
+
+#include <constants.h>
+#include <display.h>
+#include <vs1053.h>
+
+#include <Adafruit_SleepyDog.h>
 #include <Adafruit_TinyUSB.h>
+#include <Debouncer.h>
+#include <SD.h>
+
+// Feather ESP32
+#if defined(ESP32) && !defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S2)
+
+// TODO
+
+// Feather M4, M0, 328, ESP32-S2, nRF52840 or 32u4
+#else
+
+const uint8_t mass_storage_pin = 12;
+
+#endif
+
+const char* const mass_storage_mode = "Mass storage mode";
+
 
 Adafruit_USBD_MSC usb_msc;
 
 Sd2Card card;
 SdVolume volume;
 
+Debouncer massStorageButton(debounce_ms);
+
+bool mass_storage_begin(uint8_t);
 int32_t msc_read_cb(uint32_t, void*, uint32_t);
 int32_t msc_write_cb(uint32_t, uint8_t*, uint32_t);
 void msc_flush_cb();
 
 volatile bool mass_storage_got_read;
 
-void mass_storage_init()
+void mass_storage_setup()
 {
+  pinMode(mass_storage_pin, INPUT_PULLUP);
+
   // Set disk vendor id, product id and revision with string up to 8, 16, 4 characters respectively
   usb_msc.setID("Steve", "MP3 Player", "1.0");
 
@@ -37,6 +65,28 @@ void mass_storage_init()
   usb_msc.begin();
 
   mass_storage_got_read = false;
+}
+
+bool mass_storage_button()
+{
+  return massStorageButton.update(digitalRead(mass_storage_pin)) && !massStorageButton.get();
+}
+
+void mass_storage_loop()
+{
+  Watchdog.disable();
+  display_text(mass_storage_mode, booting);
+
+  if (!mass_storage_begin(CARDCS)) {
+    display_text("Mass storage failed", boot_error);
+
+    while (true) led_blinkCode(no_microsd);
+  }
+
+  while (true) {
+    display_text(mass_storage_mode, mass_storage_got_read ? "Got reads" : "No reads yet");
+    delay(1000);
+  }
 }
 
 bool mass_storage_begin(uint8_t chipSelectPin)

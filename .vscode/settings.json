@@ -9,6 +9,7 @@
         "initializer_list": "cpp",
         "typeinfo": "cpp",
         "list": "cpp",
-        "*.tcc": "cpp"
+        "*.tcc": "cpp",
+        "display.h": "c"
     }
 }
