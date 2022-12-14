@@ -30,8 +30,10 @@ Adafruit_VS1053_FilePlayer musicPlayer =
 
 const int debounce_ms = 100;
 Debouncer encoderButton(debounce_ms);
+Debouncer massStorageButton(debounce_ms);
 
 const uint8_t volume_pin = A2;
+const uint8_t mass_storage_pin = 12;
 
 const int fileStackSize = 5;
 int fileIndex = 0;
@@ -60,7 +62,7 @@ const int long_blink_ms = 500;
 const int after_pattern_ms = 1500;
 
 // Updating the display is usually at or just under this duration.
-const unsigned long target_frametime_micros = 40000;
+const unsigned long target_frametime_micros = 70000;
 
 // Blink codes for startup situations
 const int waiting_for_serial[] = {short_blink_ms, 0};
@@ -79,15 +81,17 @@ const uint8_t max_volume = 0;
 const char* const booting    = "Boot";
 const char* const boot_error = "Boot error";
 
+const char* const mass_storage_mode = "Mass storage mode";
+
 void setup()
 {
   pinMode(volume_pin, INPUT);
+  pinMode(mass_storage_pin, INPUT_PULLUP);
 
   // Keep LED on during startup.
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
 
-  // TODO: Do this, and don't try playing music at the same time, only on button press.
   mass_storage_init();
 
   Serial.begin(115200);
@@ -155,12 +159,6 @@ void setup()
   // Initialize SD card
   if (!SD.begin(CARDCS)) {
     display_text("MicroSD failed or not present", boot_error);
-
-    while (true) blinkCode(no_microsd);
-  }
-
-  if (!mass_storage_begin(CARDCS)) {
-    display_text("Mass storage failed", boot_error);
 
     while (true) blinkCode(no_microsd);
   }
@@ -260,7 +258,24 @@ void loop()
   unsigned long start = millis();
 
   Watchdog.reset();
-  musicPlayer.feedBuffer();
+
+  // Switch to mass storage mode on button press. This is a separate mode so
+  // that music playback isn't interrupted by mass storage CPU load.
+  if (massStorageButton.update(digitalRead(mass_storage_pin)) && !massStorageButton.get()) {
+    Watchdog.disable();
+    display_text(mass_storage_mode, booting);
+
+    if (!mass_storage_begin(CARDCS)) {
+      display_text("Mass storage failed", boot_error);
+
+      while (true) blinkCode(no_microsd);
+    }
+
+    while (true) {
+      display_text(mass_storage_mode, mass_storage_got_read ? "Got reads" : "No reads yet");
+      delay(1000);
+    }
+  }
 
   // Because higher values given to musicPlayer.setVolume() are quieter, so
   // invert scaled ADC. Low ADC numbers give high volume values to be quiet.
@@ -271,8 +286,8 @@ void loop()
   // 0 is 100%; 160 is 0%.
   int display_volume = roundf(100 - (100.0f/inaudible)*volume);
   if (previous_display_volume != display_volume) {
-    musicPlayer.setVolume(volume, volume);
     Serial.printf("Set volume %d\n", volume);
+    musicPlayer.setVolume(volume, volume);
 
     previous_display_volume = display_volume;
     last_volume_change = start;
@@ -281,7 +296,6 @@ void loop()
   // Toggle pause on encoder button press.
   if (encoderButton.update(ss.digitalRead(seesaw_switch_pin)) && !encoderButton.get()) {
     paused = !paused;
-    musicPlayer.pausePlaying(paused);
 
     // Red if paused, otherwise off.
     if (paused) {
@@ -295,6 +309,8 @@ void loop()
       sspixel.setPixelColor(0, 0x000000);
     }
     sspixel.show();
+
+    musicPlayer.pausePlaying(paused);
   } else {
     // The encoder position doesn't have a valid reading when the button is
     // pressed, so consider it only when the button isn't pressed.
@@ -338,17 +354,12 @@ void loop()
     }
 
     if (changed_song) {
-      /*
-       * TODO: playing an MP3, then while that's playing trying to switch to an OGG has silent playback. When you try to play the OGG again it works.
-       *       attempt to follow the datasheet in _datasheet_stopping broke stopping.
-       */
-      musicPlayer.stopPlaying();
       Serial.printf("Filename: '%s'\r\n", filenames[selected_file_index]);
       Serial.printf("Display name: '%s'\r\n", display_names[selected_file_index]);
+      musicPlayer.softReset();
       if (!musicPlayer.startPlayingFile(filenames[selected_file_index])) {
         display_text(filenames[selected_file_index], "start failed");
         delay(1000);
-        musicPlayer.stopPlaying();
       }
 
       song_start_time = start;
@@ -420,10 +431,31 @@ void loop()
   if (display_updated) frame_times[frame_time_index++] = frame_time;
   else idle_frame_times[idle_frame_time_index++] = frame_time;
 
+  // Continue feeding the buffer while waiting for the next frame.
   auto micros_frame_time = micros() - start_micros;
   if (micros_frame_time < target_frametime_micros) {
-    delayMicroseconds(target_frametime_micros - micros_frame_time);
-  } else if (frame_time > 60) {
+    auto wait_duration_remaining = target_frametime_micros - micros_frame_time;
+
+    // Wait until next frame, feeding the buffer every poll interval.
+    const auto feed_poll_microseconds = 5000;
+    while (wait_duration_remaining) {
+      auto feed_start_micros = micros();
+      musicPlayer.feedBuffer();
+
+      // Don't re-wait the time it took to feed the buffer.
+      auto feed_duration_micros = micros() - feed_start_micros;
+      if (wait_duration_remaining > feed_duration_micros) {
+        wait_duration_remaining -= feed_duration_micros;
+      } else {
+        // No more waiting when the duration is elapsed.
+        break;
+      }
+
+      auto wait_duration = min(feed_poll_microseconds, wait_duration_remaining);
+      delayMicroseconds(wait_duration);
+      wait_duration_remaining -= wait_duration;
+    }
+  } else {
     Serial.printf("Long frame! %.1f ms (display updated %d)\r\n", (micros() - start_micros) / 1000.0f, display_updated);
   }
 }

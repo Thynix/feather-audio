@@ -164,7 +164,7 @@ bool display_setup()
  */
 bool display_text(const char* top, const char* bottom)
 {
-  //bool display_changed = topLines.Display(top) || bottomLine.Display(bottom); // OOPS - took me a while to realize lazy eval was biting me
+  // Avoid lazy evaluation to ensure both lines evaluate whether to update.
   bool display_changed = topLines.Display(top);
   display_changed |= bottomLine.Display(bottom);
 

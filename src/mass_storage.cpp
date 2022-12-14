@@ -21,6 +21,8 @@ int32_t msc_read_cb(uint32_t, void*, uint32_t);
 int32_t msc_write_cb(uint32_t, uint8_t*, uint32_t);
 void msc_flush_cb();
 
+volatile bool mass_storage_got_read;
+
 void mass_storage_init()
 {
   // Set disk vendor id, product id and revision with string up to 8, 16, 4 characters respectively
@@ -34,9 +36,7 @@ void mass_storage_init()
   usb_msc.setUnitReady(false);
   usb_msc.begin();
 
-  Serial.println("Adafruit TinyUSB Mass Storage SD Card example");
-
-  Serial.println("\nInitializing SD card...");
+  mass_storage_got_read = false;
 }
 
 bool mass_storage_begin(uint8_t chipSelectPin)
@@ -75,6 +75,7 @@ bool mass_storage_begin(uint8_t chipSelectPin)
 // return number of copied bytes (must be multiple of block size)
 int32_t msc_read_cb(uint32_t lba, void* buffer, uint32_t bufsize)
 {
+  mass_storage_got_read = true;
   (void) bufsize;
   return card.readBlock(lba, (uint8_t*) buffer) ? 512 : -1;
 }
