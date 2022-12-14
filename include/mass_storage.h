@@ -1,5 +1,6 @@
 #include <stdint.h>
 
+extern volatile bool massStorageMode;
+
 void mass_storage_setup();
-bool mass_storage_button();
 void mass_storage_loop();

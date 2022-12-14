@@ -32,7 +32,43 @@ const uint8_t mass_storage_pin = 12;
 
 #endif
 
+// Select only one to be true for SAMD21.
+#define USING_TIMER_TC3         true      // Only TC3 can be used for SAMD51
+#define USING_TIMER_TC4         false     // Do not use with Servo library
+#define USING_TIMER_TC5         false
+#define USING_TIMER_TCC         false
+#define USING_TIMER_TCC1        false
+#define USING_TIMER_TCC2        false     // Don't use this, can crash on some boards
+
+#include "SAMDTimerInterrupt.h"
+
+// TC3, TC4, TC5 max permissible TIMER_INTERVAL_MS is 1398.101 ms. Longer will
+// overflow, and is therefore not permitted.
+// Use TCC, TCC1, TCC2 for longer TIMER_INTERVAL_MS
+#define TIMER_INTERVAL_MS        200
+
+#if USING_TIMER_TC3
+  #define SELECTED_TIMER      TIMER_TC3
+#elif USING_TIMER_TC4
+  #define SELECTED_TIMER      TIMER_TC4
+#elif USING_TIMER_TC5
+  #define SELECTED_TIMER      TIMER_TC5
+#elif USING_TIMER_TCC
+  #define SELECTED_TIMER      TIMER_TCC
+#elif USING_TIMER_TCC1
+  #define SELECTED_TIMER      TIMER_TCC1
+#elif USING_TIMER_TCC2
+  #define SELECTED_TIMER      TIMER_TCC
+#else
+  #error You have to select 1 Timer
+#endif
+
+// Init selected SAMD timer
+SAMDTimer ITimer(SELECTED_TIMER);
+volatile bool massStorageMode = false;
+
 const char* const sd_card_mode = "SD card";
+const int timer_init_error[] = {long_blink_ms, short_blink_ms, long_blink_ms, 0};
 
 Adafruit_USBD_MSC usb_msc;
 
@@ -45,6 +81,7 @@ bool mass_storage_begin(uint8_t);
 int32_t msc_read_cb(uint32_t, void*, uint32_t);
 int32_t msc_write_cb(uint32_t, uint8_t*, uint32_t);
 void msc_flush_cb();
+void TimerHandler();
 
 volatile unsigned int read_count = 0;
 volatile unsigned int write_count = 0;
@@ -63,6 +100,15 @@ void mass_storage_setup()
   // If we don't initialize, board will be enumerated as CDC only
   usb_msc.setUnitReady(false);
   usb_msc.begin();
+
+  if (ITimer.attachInterruptInterval_MS(TIMER_INTERVAL_MS, TimerHandler)) {
+    Serial.println("ITimer set");
+  } else {
+    while (true) {
+      Serial.println("Can't set mass storage button timer. Select another interval or timer.");
+      led_blinkCode(timer_init_error);
+    }
+  }
 }
 
 bool mass_storage_button()
@@ -152,4 +198,10 @@ int32_t msc_write_cb(long unsigned int lba, unsigned char *buffer, long unsigned
 void msc_flush_cb()
 {
   // nothing to do
+}
+
+// Poll mass storage mode button on a timer.
+void TimerHandler()
+{
+  massStorageMode = mass_storage_button();
 }

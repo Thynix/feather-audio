@@ -11,48 +11,11 @@
 #include <algorithm>
 #include <ArduinoTrace.h>
 
-// Select only one to be true for SAMD21.
-#define USING_TIMER_TC3         true      // Only TC3 can be used for SAMD51
-#define USING_TIMER_TC4         false     // Do not use with Servo library
-#define USING_TIMER_TC5         false
-#define USING_TIMER_TCC         false
-#define USING_TIMER_TCC1        false
-#define USING_TIMER_TCC2        false     // Don't use this, can crash on some boards
-
-#include "SAMDTimerInterrupt.h"
-
-// TC3, TC4, TC5 max permissible TIMER_INTERVAL_MS is 1398.101 ms. Longer will
-// overflow, and is therefore not permitted.
-// Use TCC, TCC1, TCC2 for longer TIMER_INTERVAL_MS
-#define TIMER_INTERVAL_MS        200
-
-#if USING_TIMER_TC3
-  #define SELECTED_TIMER      TIMER_TC3
-#elif USING_TIMER_TC4
-  #define SELECTED_TIMER      TIMER_TC4
-#elif USING_TIMER_TC5
-  #define SELECTED_TIMER      TIMER_TC5
-#elif USING_TIMER_TCC
-  #define SELECTED_TIMER      TIMER_TCC
-#elif USING_TIMER_TCC1
-  #define SELECTED_TIMER      TIMER_TCC1
-#elif USING_TIMER_TCC2
-  #define SELECTED_TIMER      TIMER_TCC
-#else
-  #error You have to select 1 Timer
-#endif
-
-// Init selected SAMD timer
-SAMDTimer ITimer(SELECTED_TIMER);
-volatile bool massStorageMode = false;
-
 // Updating the display is usually at or just under this duration.
 const unsigned long target_frametime_micros = 70000;
 
 // Blink codes for startup situations
 const int waiting_for_serial[] = {short_blink_ms, 0};
-
-void TimerHandler();
 
 void setup()
 {
@@ -92,11 +55,6 @@ void setup()
   Serial.print(countdown_milliseconds);
   Serial.println(" milliseconds");
 
-  if (ITimer.attachInterruptInterval_MS(TIMER_INTERVAL_MS, TimerHandler))
-    Serial.print("ITimer set");
-  else
-    Serial.println("Can't set ITimer. Select another freq. or timer");
-
   Serial.println("Startup complete");
   led_off();
   encoder_led_off();
@@ -113,6 +71,7 @@ void loop()
   static int idle_frame_time_index = 0;
   const unsigned long frame_time_report_interval_ms = 5000;
   static unsigned long last_frame_time_report;
+  static bool paused = false;
 
   unsigned long start_micros = micros();
   unsigned long start = millis();
@@ -122,11 +81,12 @@ void loop()
   // Switch to mass storage mode on button press. This is a separate mode so
   // that music playback isn't interrupted by mass storage CPU load.
   // mass_storage_loop() does not return.
-  if (massStorageMode)
+  if (massStorageMode) {
+    if (!paused) vs1053_togglePause();
     mass_storage_loop();
+  }
 
   // Toggle pause on encoder button press.
-  static bool paused = false;
   if (encoder_togglePause()) {
     paused = !paused;
     vs1053_togglePause();
@@ -186,9 +146,4 @@ void loop()
   } else {
     Serial.printf("Long frame! %lu us\r\n", micros_frame_time);
   }
-}
-
-void TimerHandler()
-{
-  massStorageMode = mass_storage_button();
 }
