@@ -32,7 +32,7 @@ const uint8_t mass_storage_pin = 12;
 
 #endif
 
-const char* const mass_storage_mode = "Mass storage";
+const char* const sd_card_mode = "SD card";
 
 Adafruit_USBD_MSC usb_msc;
 
@@ -46,7 +46,8 @@ int32_t msc_read_cb(uint32_t, void*, uint32_t);
 int32_t msc_write_cb(uint32_t, uint8_t*, uint32_t);
 void msc_flush_cb();
 
-volatile bool mass_storage_got_read;
+volatile unsigned int read_count = 0;
+volatile unsigned int write_count = 0;
 
 void mass_storage_setup()
 {
@@ -62,8 +63,6 @@ void mass_storage_setup()
   // If we don't initialize, board will be enumerated as CDC only
   usb_msc.setUnitReady(false);
   usb_msc.begin();
-
-  mass_storage_got_read = false;
 }
 
 bool mass_storage_button()
@@ -74,7 +73,7 @@ bool mass_storage_button()
 void mass_storage_loop()
 {
   Watchdog.disable();
-  display_text(booting, mass_storage_mode);
+  display_text(booting, sd_card_mode);
 
   if (!mass_storage_begin(CARDCS)) {
     display_text("Mass storage failed", boot_error);
@@ -82,18 +81,17 @@ void mass_storage_loop()
     while (true) led_blinkCode(no_microsd);
   }
 
+  // Show signs of life to make the wait more bearable.
   char buf[32];
-  for (uint8_t i = 0;; i++) {
-    // Show signs of life to make the wait more bearable.
-    if (mass_storage_got_read)
-      strcpy(buf, "Got reads");
-    else
-      strcpy(buf, "No reads");
+  char buf2[32];
+  for (uint8_t i = 0; ; i++) {
+    sprintf(buf, "R%u W%u", read_count, write_count);
+    strcpy(buf2, sd_card_mode);
 
     for (uint8_t  j = 0; j < (i % 6); j++)
-      strcpy(buf + strlen(buf), ".");
+      strcpy(buf2 + strlen(buf2), ".");
 
-    display_text(buf, mass_storage_mode);
+    display_text(buf, buf2);
     delay(1000);
   }
 }
@@ -111,7 +109,7 @@ bool mass_storage_begin(uint8_t chipSelectPin)
 
   // Now we will try to open the 'volume'/'partition' - it should be FAT16 or FAT32
   if (!volume.init(card)) {
-    Serial.println("Could not find FAT16/FAT32 partition.\nMake sure you've formatted the card");
+    Serial.println("Could not find FAT16/FAT32 partition\r\nMake sure you've formatted the card");
     return false;
   }
 
@@ -134,7 +132,7 @@ bool mass_storage_begin(uint8_t chipSelectPin)
 // return number of copied bytes (must be multiple of block size)
 int32_t msc_read_cb(uint32_t lba, void* buffer, uint32_t bufsize)
 {
-  mass_storage_got_read = true;
+  read_count++;
   (void) bufsize;
   return card.readBlock(lba, (uint8_t*) buffer) ? 512 : -1;
 }
@@ -144,6 +142,7 @@ int32_t msc_read_cb(uint32_t lba, void* buffer, uint32_t bufsize)
 // return number of written bytes (must be multiple of block size)
 int32_t msc_write_cb(long unsigned int lba, unsigned char *buffer, long unsigned int bufsize)
 {
+  write_count++;
   (void) bufsize;
   return card.writeBlock(lba, buffer) ? 512 : -1;
 }

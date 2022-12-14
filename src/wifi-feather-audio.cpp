@@ -24,7 +24,7 @@
 // TC3, TC4, TC5 max permissible TIMER_INTERVAL_MS is 1398.101 ms. Longer will
 // overflow, and is therefore not permitted.
 // Use TCC, TCC1, TCC2 for longer TIMER_INTERVAL_MS
-#define TIMER_INTERVAL_MS        100
+#define TIMER_INTERVAL_MS        200
 
 #if USING_TIMER_TC3
   #define SELECTED_TIMER      TIMER_TC3
