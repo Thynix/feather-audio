@@ -107,7 +107,7 @@ bool vs1053_setup()
     return false;
   }
 
-  display_text("Patching VS1053", booting);
+  display_text("Patching         VS1053", booting);
   musicPlayer.applyPatch(plugin, pluginSize);
 
   display_text("Finding songs", booting);
