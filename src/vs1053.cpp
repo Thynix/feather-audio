@@ -178,6 +178,14 @@ bool vs1053_setup()
   //     kernel: usb usb5-port2: disabled by hub (EMI?), re-enabling...
   delay(1000);
 
+  // DREQ is on an interrupt pin, so use background audio playing
+  if (!musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT)) {
+    Serial.println("Failed to set VS1053 interrupt");
+    display_text("VS1053 interrupts error", boot_error);
+    led_blinkCode(no_VS1053);
+    return false;
+  }
+
   return true;
 }
 
@@ -222,7 +230,7 @@ bool vs1053_loop()
     auto seconds_played = (seconds_elapsed - song_millis_paused) / 1000;
     // TODO: Instead of hardcoding %02d for song number, determine digits in song count and match it.
     // Playtime in minutes:seconds song number/song count
-    snprintf(buf, sizeof(buf), "%d:%02d %02d/%u",
+    snprintf(buf, sizeof(buf), "%lu:%02lu %02d/%u",
              seconds_played / 60, seconds_played % 60,
              selected_file_index + 1, filenames.size());
 
@@ -306,30 +314,6 @@ void vs1053_togglePause()
   }
 
   musicPlayer.pausePlaying(paused);
-}
-
-void vs1053_feedAndWait(unsigned long microseconds)
-{
-  const unsigned long feed_poll_microseconds = 5000;
-  auto wait_duration_remaining = microseconds;
-
-  while (wait_duration_remaining) {
-    auto feed_start_micros = micros();
-    musicPlayer.feedBuffer();
-
-    // Don't re-wait the time it took to feed the buffer.
-    auto feed_duration_micros = micros() - feed_start_micros;
-    if (wait_duration_remaining > feed_duration_micros) {
-      wait_duration_remaining -= feed_duration_micros;
-    } else {
-      // No more waiting when the duration is elapsed.
-      break;
-    }
-
-    auto wait_duration = min(feed_poll_microseconds, wait_duration_remaining);
-    delayMicroseconds(wait_duration);
-    wait_duration_remaining -= wait_duration;
-  }
 }
 
 float readVolume()

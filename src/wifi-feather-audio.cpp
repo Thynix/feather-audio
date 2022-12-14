@@ -178,10 +178,11 @@ void loop()
   if (display_updated) frame_times[frame_time_index++] = frame_time;
   else idle_frame_times[idle_frame_time_index++] = frame_time;
 
-  // Continue feeding the buffer while waiting for the next frame.
+  // If this frame completed faster than the target, wait before starting the
+  // next.
   auto micros_frame_time = micros() - start_micros;
   if (micros_frame_time < target_frametime_micros) {
-    vs1053_feedAndWait(target_frametime_micros - micros_frame_time);
+    delayMicroseconds(target_frametime_micros - micros_frame_time);
   } else {
     Serial.printf("Long frame! %lu us\r\n", micros_frame_time);
   }

@@ -8,9 +8,6 @@ bool vs1053_loop();
 bool vs1053_changeSong(int direction);
 void vs1053_togglePause();
 
-// Wait until next frame, feeding the buffer every poll interval.
-void vs1053_feedAndWait(unsigned long microseconds);
-
 const int no_microsd[] = {short_blink_ms, long_blink_ms, short_blink_ms, 0};
 
 // Feather ESP8266
