@@ -19,12 +19,12 @@
 #define USING_TIMER_TCC1        false
 #define USING_TIMER_TCC2        false     // Don't use this, can crash on some boards
 
-//#include "SAMDTimerInterrupt.h"
+#include "SAMDTimerInterrupt.h"
 
 // TC3, TC4, TC5 max permissible TIMER_INTERVAL_MS is 1398.101 ms. Longer will
 // overflow, and is therefore not permitted.
 // Use TCC, TCC1, TCC2 for longer TIMER_INTERVAL_MS
-#define TIMER_INTERVAL_MS        1000
+#define TIMER_INTERVAL_MS        100
 
 #if USING_TIMER_TC3
   #define SELECTED_TIMER      TIMER_TC3
@@ -43,7 +43,8 @@
 #endif
 
 // Init selected SAMD timer
-//SAMDTimer ITimer(SELECTED_TIMER);
+SAMDTimer ITimer(SELECTED_TIMER);
+volatile bool massStorageMode = false;
 
 // Updating the display is usually at or just under this duration.
 const unsigned long target_frametime_micros = 70000;
@@ -59,7 +60,7 @@ void setup()
 
   Serial.begin(115200);
 
-#if 1
+#if 0
   // Blink while waiting for serial connection
   if (!Serial) {
     display_setup();
@@ -91,12 +92,10 @@ void setup()
   Serial.print(countdown_milliseconds);
   Serial.println(" milliseconds");
 
-#if 0
   if (ITimer.attachInterruptInterval_MS(TIMER_INTERVAL_MS, TimerHandler))
     Serial.print("ITimer set");
   else
     Serial.println("Can't set ITimer. Select another freq. or timer");
-#endif
 
   Serial.println("Startup complete");
   led_off();
@@ -123,7 +122,7 @@ void loop()
   // Switch to mass storage mode on button press. This is a separate mode so
   // that music playback isn't interrupted by mass storage CPU load.
   // mass_storage_loop() does not return.
-  if (mass_storage_button())
+  if (massStorageMode)
     mass_storage_loop();
 
   // Toggle pause on encoder button press.
@@ -190,5 +189,5 @@ void loop()
 
 void TimerHandler()
 {
-  //TRACE();
+  massStorageMode = mass_storage_button();
 }

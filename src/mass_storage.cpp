@@ -32,8 +32,7 @@ const uint8_t mass_storage_pin = 12;
 
 #endif
 
-const char* const mass_storage_mode = "Mass storage mode";
-
+const char* const mass_storage_mode = "Mass storage";
 
 Adafruit_USBD_MSC usb_msc;
 
@@ -75,7 +74,7 @@ bool mass_storage_button()
 void mass_storage_loop()
 {
   Watchdog.disable();
-  display_text(mass_storage_mode, booting);
+  display_text(booting, mass_storage_mode);
 
   if (!mass_storage_begin(CARDCS)) {
     display_text("Mass storage failed", boot_error);
@@ -83,8 +82,18 @@ void mass_storage_loop()
     while (true) led_blinkCode(no_microsd);
   }
 
-  while (true) {
-    display_text(mass_storage_mode, mass_storage_got_read ? "Got reads" : "No reads yet");
+  char buf[32];
+  for (uint8_t i = 0;; i++) {
+    // Show signs of life to make the wait more bearable.
+    if (mass_storage_got_read)
+      strcpy(buf, "Got reads");
+    else
+      strcpy(buf, "No reads");
+
+    for (uint8_t  j = 0; j < (i % 6); j++)
+      strcpy(buf + strlen(buf), ".");
+
+    display_text(buf, mass_storage_mode);
     delay(1000);
   }
 }
