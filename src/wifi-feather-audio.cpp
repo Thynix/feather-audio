@@ -41,6 +41,9 @@ File fileStack[fileStackSize] = {};
 std::vector<const char*> filenames;
 std::vector<const char*> display_names;
 
+const size_t volumeReadCount = 100;
+std::vector<uint32_t> volumeReads(volumeReadCount);
+
 const char* const accepted_extensions[] = {
   ".MP3", ".mp3",
   ".OGG", ".ogg",
@@ -192,6 +195,8 @@ void setup()
     snprintf(buf, sizeof(buf), "Loading song %u / %u", i + 1, filenames.size());
     display_text(buf, booting);
 
+    Serial.printf("%12s | ", filenames[i]);
+
     auto file = SD.open(filenames[i]);
     if (mp3_id3_file_has_tags(&file)) {
       const char* title = mp3_id3_file_read_tag(&file, MP3_ID3_TAG_TITLE);
@@ -219,6 +224,7 @@ void setup()
       display_name[len - 1] = '\0';
       display_names[i] = display_name;
     }
+    file.close();
 
     Serial.println(display_names[i]);
   }
@@ -356,10 +362,12 @@ void loop()
     if (changed_song) {
       Serial.printf("Filename: '%s'\r\n", filenames[selected_file_index]);
       Serial.printf("Display name: '%s'\r\n", display_names[selected_file_index]);
+      musicPlayer.stopPlaying();
       musicPlayer.softReset();
       if (!musicPlayer.startPlayingFile(filenames[selected_file_index])) {
         display_text(filenames[selected_file_index], "start failed");
         delay(1000);
+        musicPlayer.stopPlaying();
       }
 
       song_start_time = start;
@@ -437,7 +445,7 @@ void loop()
     auto wait_duration_remaining = target_frametime_micros - micros_frame_time;
 
     // Wait until next frame, feeding the buffer every poll interval.
-    const auto feed_poll_microseconds = 5000;
+    const unsigned long feed_poll_microseconds = 5000;
     while (wait_duration_remaining) {
       auto feed_start_micros = micros();
       musicPlayer.feedBuffer();
@@ -503,17 +511,21 @@ accept_entry:
 
 float readVolume()
 {
-  const int volumeReads = 50;
+  volumeReads.clear();
 
-  uint32_t readTotal = 0;
-  for (int i = 0; i < volumeReads; i++)
-    readTotal += analogRead(volume_pin);
+  for (size_t i = 0; i < volumeReadCount; i++)
+    volumeReads.push_back(analogRead(volume_pin));
 
-  uint32_t averageRead = readTotal / ((float)volumeReads);
+  struct {
+    bool operator()(uint32_t a, uint32_t b) { return a < b; }
+  } compareReads;
+
+  std::sort(volumeReads.begin(), volumeReads.end(), compareReads);
+  uint32_t medianRead = volumeReads[volumeReads.size() / 2];
 
   // When using a linear potentiometer, take the log to match volume perception.
   // ADC max is 1023, and natural log of 1023 = 6.93049
-  float scaledADC = log(max(1023 - averageRead, 1u)) / 6.93049;
+  float scaledADC = log(max(1023 - medianRead, 1u)) / 6.93049;
 
   // Audio potentiometer - no scaling.
   //float scaledADC = analogRead(volume_pin) / 1023.0;
