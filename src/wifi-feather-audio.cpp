@@ -360,8 +360,12 @@ void loop()
     }
 
     if (changed_song) {
-      Serial.printf("Filename: '%s'\r\n", filenames[selected_file_index]);
-      Serial.printf("Display name: '%s'\r\n", display_names[selected_file_index]);
+      Serial.print("Filename: '");
+      Serial.print(filenames[selected_file_index]);
+      Serial.println("'");
+      Serial.print("Display name: '");
+      Serial.print(display_names[selected_file_index]);
+      Serial.println("'");
       musicPlayer.stopPlaying();
       musicPlayer.softReset();
       if (!musicPlayer.startPlayingFile(filenames[selected_file_index])) {
