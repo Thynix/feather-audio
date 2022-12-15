@@ -208,14 +208,23 @@ bool vs1053_loop()
   // 0 is 100%; 160 is 0%.
   int display_volume = roundf(100 - (100.0f/inaudible)*volume);
   if (previous_display_volume != display_volume) {
-    Serial.printf("Set volume %d\n", volume);
-    musicPlayer.setVolume(volume, volume);
+    // Ignore single-percentage changes when not already displaying volume.
+    // This means the minimum adjustment to start adjusting is 2.
+    // (With the exception of 0% and 100% as those have a wider stable range.)
+    if (start - last_volume_change >= volume_change_display_ms &&
+        abs(previous_display_volume - display_volume) == 1 &&
+        display_volume != 0 && display_volume != 100) {
+      //Serial.println("Ignoring volume flicker");
+    } else {
+      Serial.printf("Set volume %d\n", volume);
+      musicPlayer.setVolume(volume, volume);
 
-    previous_display_volume = display_volume;
-    last_volume_change = start;
+      previous_display_volume = display_volume;
+      last_volume_change = start;
+    }
   }
 
-    bool display_updated = false;
+  bool display_updated = false;
   if (start - last_volume_change < volume_change_display_ms) {
       char buf[32];
       // Pad with two spaces to leave room for "100%"
