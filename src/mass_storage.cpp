@@ -144,7 +144,7 @@ void mass_storage_loop()
 
 bool mass_storage_begin(uint8_t chipSelectPin)
 {
-  if (!card.init(SPI_HALF_SPEED, chipSelectPin))
+  if (!card.init(SPI_FULL_SPEED, chipSelectPin))
   {
     Serial.println("initialization failed. Things to check:");
     Serial.println("* is a card inserted?");
