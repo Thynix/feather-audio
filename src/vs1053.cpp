@@ -77,7 +77,7 @@ Adafruit_VS1053_FilePlayer musicPlayer =
 
 File file;
 
-const size_t volumeReadCount = 100;
+const size_t volumeReadCount = 300;
 std::vector<uint32_t> volumeReads(volumeReadCount);
 
 const int fileStackSize = 5;
@@ -199,8 +199,10 @@ bool vs1053_loop()
 
   // Because higher values given to musicPlayer.setVolume() are quieter, so
   // invert scaled ADC. Low ADC numbers give high volume values to be quiet.
-  uint8_t volume = (uint8_t) ((1.0f - readVolume()) * inaudible);
-  //uint8_t volume = (uint8_t) (0.5f * inaudible);
+  // Pot
+  //uint8_t volume = (uint8_t) ((1.0f - readVolume()) * inaudible);
+  // Reverse pot
+  uint8_t volume = (uint8_t) (readVolume() * inaudible);
 
   // Only change volume setting if the displayed value is different.
   // 0 is 100%; 160 is 0%.
@@ -330,12 +332,12 @@ float readVolume()
   std::sort(volumeReads.begin(), volumeReads.end(), compareReads);
   uint32_t medianRead = volumeReads[volumeReads.size() / 2];
 
-  // When using a linear potentiometer, take the log to match volume perception.
+  // Linear potentiometer - take the log to match volume perception.
   // ADC max is 1023, and natural log of 1023 = 6.93049
-  float scaledADC = log(max(1023 - medianRead, 1u)) / 6.93049;
+  //float scaledADC = log(max(1023 - medianRead, 1u)) / 6.93049;
 
   // Audio potentiometer - no scaling.
-  //float scaledADC = analogRead(volume_pin) / 1023.0;
+  float scaledADC = medianRead / 1023.0;
 
   if (scaledADC < 0.0f) scaledADC = 0.0f;
   if (scaledADC > 1.0f) scaledADC = 1.0f;
