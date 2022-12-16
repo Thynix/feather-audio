@@ -80,33 +80,56 @@ void setup() {
   Serial.begin(9600);
   Serial.println("Adafruit VS1053 Library Test");
 
+  pinMode(LED_BUILTIN, OUTPUT);
+
   // initialise the music player
   if (! musicPlayer.begin()) { // initialise the music player
      Serial.println(F("Couldn't find VS1053, do you have the right pins defined?"));
-     while (1);
+     while (true) {
+        digitalWrite(LED_BUILTIN, HIGH);
+        delay(1000);
+        digitalWrite(LED_BUILTIN, LOW);
+        delay(1000);
+     }
   }
   Serial.println(F("VS1053 found"));
 
+  // Player found
+#if 1
+  // Beep while waiting for serial with timeout of ~10 seconds.
+  for (int i = 0; !Serial /*&& i < 10*/; i++) {
+    Serial.println(i);
+    musicPlayer.sineTest(0x42, 100); // 375 Hz
+    delay(900);
+  }
+#else
+  musicPlayer.sineTest(0x42, 100); // 375 Hz
+#endif
+
   if (!SD.begin(CARDCS)) {
     Serial.println(F("SD failed, or not present"));
-    while (1);  // don't do anything more
+    while (true) {
+      musicPlayer.sineTest(0x48, 200); // 1500 Hz
+      musicPlayer.sineTest(0x43, 200); // 562.5 Hz
+      delay(500);
+    }
   }
   Serial.println("SD OK!");
 
-  musicPlayer.sineTest(0x44, 100);    // Make a tone to indicate VS1053 is working
+  // Boot success chime
+  musicPlayer.sineTest(0x42, 100); // 375 Hz
+  musicPlayer.sineTest(0x44, 100); // 750 Hz
 
   // Read button during startup so it doesn't immediately read as changed in loop()
   next.update();
 
-  // list files
-  load(SD.open("/"));
-
-  for (auto filename : files) {
-    Serial.println(filename);
-  }
+  // Load filenames
+  auto root = SD.open("/");
+  load(root);
+  root.close();
   
   // Set volume for left, right channels. lower numbers == louder volume!
-  auto volume = 0.5f;
+  auto volume = 0.4f;
   musicPlayer.setVolume(volume*160, volume*160);
 
   /***** Two interrupt options! *******/ 
@@ -122,8 +145,8 @@ void setup() {
   // *** This method is preferred
   if (! musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT))
     Serial.println(F("DREQ pin is not an interrupt pin"));
-  
-  next.update();
+
+  //incrementBootCount();
 
   Serial.println("Startup complete");
 }
@@ -179,7 +202,6 @@ void loop() {
   }
 }
 
-
 void load(File dir) {
    while(true) {
      File entry =  dir.openNextFile();
@@ -192,9 +214,61 @@ void load(File dir) {
       continue;
     }
 
-    files.push_back(String("/") + entry.name());
+    files.push_back(entry.name());
     
     entry.close();
    }
 }
 
+int incrementBootCount()
+{
+  const char* const logFilename = "boot-count.txt";
+  long count = 0;
+
+  auto log = SD.open(logFilename);
+  if (!log) {
+    Serial.println("No existing log file");
+  } else {
+    // Load existing value, if any.
+    // If the file is empty, allocate something to read all the nothing in there.
+    auto len = max(log.size(), 1);
+    auto buf = malloc(len);
+    if (!buf) {
+      Serial.print("malloc() failed for len ");
+      Serial.println(len);
+      return logFailed();
+    }
+    
+    memset(buf, 0, len);
+    log.read(buf, len);
+
+    // Returns 0 if invalid, in which case write 0 to it for real.
+    // It might be new, or might be garbage.
+    count = strtol((const char*) buf, NULL, 10);
+    free(buf);
+  }
+
+  log.close();
+  log = SD.open(logFilename, FILE_WRITE);
+
+  log.println(count);
+  Serial.print("Boot count ");
+  Serial.println(count);
+
+  log.close();
+
+  // Check that it actually shows up.
+  if (!SD.open(logFilename))
+    return logFailed();
+
+  return 0;
+}
+
+int logFailed()
+{
+  // Failed to log boot, but continue booting anyway.
+  musicPlayer.sineTest(0x43, 200); // 562.5 Hz
+  musicPlayer.sineTest(0x43, 200); // 562.5 Hz
+
+  return 1;
+}
