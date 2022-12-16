@@ -176,7 +176,7 @@ bool vs1053_setup()
 
   // Wait for... settling? Without this serial is liable to disconnect with:
   //     kernel: usb usb5-port2: disabled by hub (EMI?), re-enabling...
-  delay(1000);
+  delay(100);
 
   // DREQ is on an interrupt pin, so use background audio playing
   if (!musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT)) {
@@ -235,13 +235,12 @@ bool vs1053_loop()
     display_updated = display_text(display_names[selected_file_index],
                                   "    Paused");
   } else {
+    auto seconds_played = musicPlayer.decodeTime();
     char buf[32];
 
-    auto seconds_elapsed = start - song_start_millis;
-    auto seconds_played = (seconds_elapsed - song_millis_paused) / 1000;
     // TODO: Instead of hardcoding %02d for song number, determine digits in song count and match it.
     // Playtime in minutes:seconds song number/song count
-    snprintf(buf, sizeof(buf), "%lu:%02lu %02d/%u",
+    snprintf(buf, sizeof(buf), "%d:%02d %02d/%u",
              seconds_played / 60, seconds_played % 60,
              selected_file_index + 1, filenames.size());
 
@@ -292,6 +291,8 @@ bool vs1053_changeSong(int encoder_change)
   Serial.print(display_names[selected_file_index]);
   Serial.println("'");
   musicPlayer.stopPlaying();
+
+  // Clear decodeTime() so elapsed time doesn't accumulate between songs.
   musicPlayer.softReset();
 
   if (!musicPlayer.startPlayingFile(filenames[selected_file_index])) {
@@ -311,17 +312,12 @@ bool vs1053_changeSong(int encoder_change)
 
 void vs1053_togglePause()
 {
-  static unsigned long song_pause_start;
-
   paused = !paused;
 
   if (paused) {
-    song_pause_start = micros();
     Serial.println("Pause");
   } else {
-    auto pause_duration = micros() - song_pause_start;
-    song_millis_paused += pause_duration;
-    Serial.printf("Resumed after %lu ms\r\n", song_millis_paused);
+    Serial.println("Resume");
   }
 
   musicPlayer.pausePlaying(paused);
