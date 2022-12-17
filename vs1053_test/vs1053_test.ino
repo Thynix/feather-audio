@@ -18,6 +18,9 @@
 #include <SD.h>
 #include <Debouncer.h>
 #include <vector>
+#include <Adafruit_NeoPixel.h>
+#include <Adafruit_seesaw.h>
+#include <seesaw_neopixel.h>
 
 // These are the pins used
 #define VS1053_RESET   -1     // VS1053 reset pin (not used!)
@@ -63,65 +66,137 @@
   #define CARDCS          5     // Card chip select pin
   // DREQ should be an Int pin *if possible* (not possible on 32u4)
   #define VS1053_DREQ     9     // VS1053 Data request, ideally an Interrupt pin
+  #define NEOPIXEL_PIN    8
 
 #endif
 
+const uint8_t SS_SWITCH = 24;
+const uint8_t SS_NEOPIX = 6;
+
+const uint8_t SEESAW_ADDR = 0x36;
+
 Adafruit_VS1053_FilePlayer musicPlayer = 
   Adafruit_VS1053_FilePlayer(VS1053_RESET, VS1053_CS, VS1053_DCS, VS1053_DREQ, CARDCS);
+Adafruit_NeoPixel neopixel(1, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
+
+Adafruit_seesaw ss;
+seesaw_NeoPixel sspixel = seesaw_NeoPixel(1, SS_NEOPIX, NEO_GRB + NEO_KHZ800);
 
 std::vector<String> files;
 
 const uint8_t next_button_pin = 12;
 const int debounce_duration_ms = 50;
 
-Debouncer next(next_button_pin, debounce_duration_ms, Debouncer::Active::L);
+int32_t encoder_position;
+
+Debouncer next(next_button_pin, debounce_duration_ms);
+Debouncer pause(SS_SWITCH);
 
 void setup() {
   Serial.begin(9600);
-  Serial.println("Adafruit VS1053 Library Test");
 
   pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(next_button_pin, INPUT_PULLUP);
 
-  // initialise the music player
-  if (! musicPlayer.begin()) { // initialise the music player
-     Serial.println(F("Couldn't find VS1053, do you have the right pins defined?"));
-     while (true) {
-        digitalWrite(LED_BUILTIN, HIGH);
-        delay(1000);
-        digitalWrite(LED_BUILTIN, LOW);
-        delay(1000);
+  neopixel.begin();
+  neopixel.clear();
+  neopixel.setBrightness(255);
+  neopixel.show();
+  
+  // Music player
+  if (!musicPlayer.begin() || !musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT)) {
+     Serial.println("couldn't find VS1053, or DREQ pin is not an interrupt pin");
+     for (uint8_t i = 0; true; i++) {
+        // Blink builtin LED every second
+        if ((millis() / 1000) % 2) {
+          digitalWrite(LED_BUILTIN, LOW);
+        } else {
+          digitalWrite(LED_BUILTIN, HIGH);
+        }
+
+        // Smoothly fade NeoPixel red
+        neopixel.setPixelColor(0, i % 100, 0, 0);
+        neopixel.show();
+
+        delay(20);
      }
   }
-  Serial.println(F("VS1053 found"));
 
-  // Player found
 #if 1
-  // Beep while waiting for serial with timeout of ~10 seconds.
-  for (int i = 0; !Serial /*&& i < 10*/; i++) {
-    Serial.println(i);
-    musicPlayer.sineTest(0x42, 100); // 375 Hz
-    delay(900);
+  // Beep while waiting for serial
+  for (uint8_t i = 0; !Serial; i++) {
+    if ((millis() / 1000) % 2) {
+      musicPlayer.sineTest(0x42, 100); // 375 Hz
+    }
+
+    // Smoothly fade NeoPixel blue
+    neopixel.setPixelColor(0, 0, 0, i % 100);
+    neopixel.show();
+
+    delay(20);
   }
-#else
-  musicPlayer.sineTest(0x42, 100); // 375 Hz
 #endif
 
+  // Turn off NeoPixel after serial setup may have left it with a color.
+  neopixel.clear();
+  neopixel.show();
+
+  Serial.println("startup");
+
+  if (! ss.begin(SEESAW_ADDR) || ! sspixel.begin(SEESAW_ADDR)) {
+    Serial.println("Couldn't find seesaw on default address");
+    while(1) delay(10);
+  }
+  Serial.println("seesaw started");
+
+  uint32_t version = ((ss.getVersion() >> 16) & 0xFFFF);
+  if (version  != 4991){
+    Serial.print("Wrong firmware loaded? ");
+    Serial.println(version);
+    while(1) delay(10);
+  }
+
+  // set not so bright!
+  sspixel.setBrightness(0);
+  sspixel.show();
+  
+  // use a pin for the built in encoder switch
+  ss.pinMode(SS_SWITCH, INPUT_PULLUP);
+
+  pause.stateFunc([](){
+    return ss.digitalRead(SS_SWITCH) ? 1 : 0;
+  });
+
+  // get starting position
+  encoder_position = ss.getEncoderPosition();
+
+  Serial.println("Turning on interrupts");
+  delay(10);
+  ss.setGPIOInterrupts(1u << SS_SWITCH, true);
+  ss.enableEncoderInterrupt();
+
+  // MicroSD card
   if (!SD.begin(CARDCS)) {
-    Serial.println(F("SD failed, or not present"));
-    while (true) {
-      musicPlayer.sineTest(0x48, 200); // 1500 Hz
-      musicPlayer.sineTest(0x43, 200); // 562.5 Hz
-      delay(500);
+    Serial.println("SD failed, or not present");
+    for (uint8_t i = 0; true; i++) {
+      if ((millis() / 1000) % 2) {
+        musicPlayer.sineTest(0x48, 200); // 1500 Hz
+        musicPlayer.sineTest(0x43, 200); // 562.5 Hz
+      }
+
+      // Smoothly fade NeoPixel green
+      neopixel.setPixelColor(0, 0, i, 0);
+      neopixel.show();
     }
   }
-  Serial.println("SD OK!");
 
   // Boot success chime
-  musicPlayer.sineTest(0x42, 100); // 375 Hz
-  musicPlayer.sineTest(0x44, 100); // 750 Hz
+  musicPlayer.sineTest(0x42, 50); // 375 Hz
+  musicPlayer.sineTest(0x44, 50); // 750 Hz
 
   // Read button during startup so it doesn't immediately read as changed in loop()
   next.update();
+  pause.update();
 
   // Load filenames
   auto root = SD.open("/");
@@ -129,22 +204,8 @@ void setup() {
   root.close();
   
   // Set volume for left, right channels. lower numbers == louder volume!
-  auto volume = 0.4f;
+  auto volume = 1 - 0.5;
   musicPlayer.setVolume(volume*160, volume*160);
-
-  /***** Two interrupt options! *******/ 
-  // This option uses timer0, this means timer1 & t2 are not required
-  // (so you can use 'em for Servos, etc) BUT millis() can lose time
-  // since we're hitchhiking on top of the millis() tracker
-  //musicPlayer.useInterrupt(VS1053_FILEPLAYER_TIMER0_INT);
-  
-  // This option uses a pin interrupt. No timers required! But DREQ
-  // must be on an interrupt pin. For Uno/Duemilanove/Diecimilla
-  // that's Digital #2 or #3
-  // See http://arduino.cc/en/Reference/attachInterrupt for other pins
-  // *** This method is preferred
-  if (! musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT))
-    Serial.println(F("DREQ pin is not an interrupt pin"));
 
   //incrementBootCount();
 
@@ -152,59 +213,74 @@ void setup() {
 }
 
 void loop() {
-  for (int i = 0; i < files.size(); i++) {
-    next.update();
+  auto paused = false;
+
+  for (auto i = 0; i < files.size(); i++) {
     auto filename = files[i].c_str();
 
-    Serial.print(filename);    
+    Serial.print(filename);
+    musicPlayer.stopPlaying();
+    musicPlayer.softReset();
     if (musicPlayer.startPlayingFile(filename)) {
       Serial.println(" started");
+
+      while (musicPlayer.playingMusic) {
+        next.update();
+        pause.update();
+
+        if (next.falling()) {
+          Serial.println("Next");
+          break;
+          /*
+          paused = !paused;
+          Serial.print("Pause ");
+          Serial.println(paused);
+
+          musicPlayer.pausePlaying(paused);
+          */
+        }
+
+        // Toggle pause TODO: why doesn't this work?
+        if (pause.falling()) {
+          paused = !paused;
+          Serial.print("Pause ");
+          Serial.println(paused);
+
+          musicPlayer.pausePlaying(paused);
+          delay(100);
+        } else {  // Ignore position changes when knob clicked - liable to accidentally nudge.
+          auto new_position = ss.getEncoderPosition();
+          if (encoder_position != new_position) {
+            auto difference = new_position - encoder_position;
+            Serial.print("Moving ");
+            Serial.println(difference);
+
+            // -1 to account for increment on loop.
+            i += difference - 1;
+
+            // Wrap around playlist when negative.
+            while (i < 0) {
+              i += files.size();
+            }
+
+            // Wrap around playlist when beyond its length.
+            i = i % files.size();
+
+            encoder_position = new_position;
+            break;
+          }
+        }
+        delay(60);
+      } 
     } else {
       Serial.println(" failed");
-    }
-
-    while (musicPlayer.playingMusic) {
-      next.update();
-
-      if (next.edge() && next.falling()) {
-        Serial.println("Next button pressed");
-        break;
-      }
-
-#if 0
-      // previous
-      if (digitalRead(9) == LOW) {
-        // -2 so it goes to the next one on loop.
-        i -= 2;
-
-        // Wrap if before the start.
-        if (i == -1)
-          i = files.size() - 2;
-        
-        break;
-      }
-
-      // toggle pause
-      if (digitalRead(6) == LOW) {
-        static auto paused = false;
-        paused = !paused;
-        musicPlayer.pausePlaying(paused);        
-      }
-
-      // next
-      if (digitalRead(5) == LOW) {
-        break;
-      }
-#endif
-
-      delay(20);
     }
   }
 }
 
 void load(File dir) {
-   while(true) {
-     File entry =  dir.openNextFile();
+   while (true) {
+     auto entry =  dir.openNextFile();
      if (!entry) {
        return;
      }
@@ -256,6 +332,7 @@ int incrementBootCount()
   Serial.println(count);
 
   log.close();
+  log.flush();
 
   // Check that it actually shows up.
   if (!SD.open(logFilename))
@@ -268,7 +345,7 @@ int logFailed()
 {
   // Failed to log boot, but continue booting anyway.
   musicPlayer.sineTest(0x43, 200); // 562.5 Hz
-  musicPlayer.sineTest(0x43, 200); // 562.5 Hz
+  musicPlayer.sineTest(0x42, 200); // lower
 
   return 1;
 }
