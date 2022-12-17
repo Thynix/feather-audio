@@ -85,12 +85,12 @@ seesaw_NeoPixel sspixel = seesaw_NeoPixel(1, SS_NEOPIX, NEO_GRB + NEO_KHZ800);
 std::vector<String> files;
 
 const uint8_t next_button_pin = 12;
-const int debounce_duration_ms = 50;
+const int debounce_duration_ms = 100;
 
 int32_t encoder_position;
 
 Debouncer next(next_button_pin, debounce_duration_ms);
-Debouncer pause(SS_SWITCH);
+Debouncer pause(debounce_duration_ms);
 
 void setup() {
   Serial.begin(9600);
@@ -163,8 +163,9 @@ void setup() {
   // use a pin for the built in encoder switch
   ss.pinMode(SS_SWITCH, INPUT_PULLUP);
 
+  pause.setActiveState(Debouncer::Active::L);
   pause.stateFunc([](){
-    return ss.digitalRead(SS_SWITCH) ? 1 : 0;
+    return ss.digitalRead(SS_SWITCH);
   });
 
   // get starting position
@@ -194,18 +195,15 @@ void setup() {
   musicPlayer.sineTest(0x42, 50); // 375 Hz
   musicPlayer.sineTest(0x44, 50); // 750 Hz
 
-  // Read button during startup so it doesn't immediately read as changed in loop()
-  next.update();
-  pause.update();
-
   // Load filenames
   auto root = SD.open("/");
   load(root);
   root.close();
   
   // Set volume for left, right channels. lower numbers == louder volume!
-  auto volume = 1 - 0.5;
-  musicPlayer.setVolume(volume*160, volume*160);
+  auto volume = 1 - 0.7;
+  const auto inaudible = 160;
+  musicPlayer.setVolume(volume*inaudible, volume*inaudible);
 
   //incrementBootCount();
 
@@ -218,37 +216,32 @@ void loop() {
   for (auto i = 0; i < files.size(); i++) {
     auto filename = files[i].c_str();
 
+    next.update();
+    pause.update();
+
     Serial.print(filename);
     musicPlayer.stopPlaying();
     musicPlayer.softReset();
     if (musicPlayer.startPlayingFile(filename)) {
       Serial.println(" started");
 
-      while (musicPlayer.playingMusic) {
+      while (musicPlayer.playingMusic || paused) {
         next.update();
         pause.update();
 
         if (next.falling()) {
           Serial.println("Next");
           break;
-          /*
-          paused = !paused;
-          Serial.print("Pause ");
-          Serial.println(paused);
-
-          musicPlayer.pausePlaying(paused);
-          */
         }
 
-        // Toggle pause TODO: why doesn't this work?
-        if (pause.falling()) {
+        // falling()/rising() always return false for buttons with a state function.
+        if (pause.edge() && !pause.read()) {
           paused = !paused;
           Serial.print("Pause ");
           Serial.println(paused);
 
           musicPlayer.pausePlaying(paused);
-          delay(100);
-        } else {  // Ignore position changes when knob clicked - liable to accidentally nudge.
+        } else if (!pause.edge()) {  // Ignore position changes when knob changes - liable to accidentally nudge.
           auto new_position = ss.getEncoderPosition();
           if (encoder_position != new_position) {
             auto difference = new_position - encoder_position;
@@ -270,7 +263,7 @@ void loop() {
             break;
           }
         }
-        delay(60);
+        delay(30);
       } 
     } else {
       Serial.println(" failed");
