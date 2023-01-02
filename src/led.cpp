@@ -1,5 +1,7 @@
 #include <led.h>
 
+#include <vs1053.h>
+
 #include <Arduino.h>
 
 const int short_blink_ms = 100;
@@ -23,14 +25,17 @@ void led_off()
   digitalWrite(LED_BUILTIN, LOW);
 }
 
-void led_blinkCode(const int *delays)
+void led_blinkCode(const int *delays, uint8_t beep_frequency_code)
 {
   // Blink (odd off, even on) until encountering 0 length terminator.
   for (int i = 0; delays[i]; i++) {
-    if (i % 2) led_off();
-    else       led_on();
-
-    delay(delays[i]);
+    if (i % 2) {
+      led_off();
+      delay(delays[i]);
+    } else {
+      led_on();
+      vs1053_beep(delays[i], beep_frequency_code);
+    }
   }
 
   led_off();

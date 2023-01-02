@@ -323,6 +323,11 @@ void vs1053_togglePause()
   musicPlayer.pausePlaying(paused);
 }
 
+void vs1053_beep(uint16_t duration_ms, uint8_t frequency_code)
+{
+  musicPlayer.sineTest(frequency_code, duration_ms);
+}
+
 float readVolume()
 {
   volumeReads.clear();

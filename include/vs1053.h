@@ -8,6 +8,9 @@ bool vs1053_loop();
 bool vs1053_changeSong(int direction);
 void vs1053_togglePause();
 
+// Beep for the given duration at a default of 375 Hz
+void vs1053_beep(uint16_t duration_ms, uint8_t frequency_code=0x42);
+
 const int no_microsd[] = {short_blink_ms, long_blink_ms, short_blink_ms, 0};
 
 // Feather ESP8266
