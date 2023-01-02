@@ -6,7 +6,7 @@ bool vs1053_setup();
 bool vs1053_loop();
 
 bool vs1053_changeSong(int direction);
-void vs1053_togglePause();
+void vs1053_pause(bool pause);
 
 // Beep for the given duration at a default of 375 Hz
 void vs1053_beep(uint16_t duration_ms, uint8_t frequency_code=0x42);

@@ -310,9 +310,9 @@ bool vs1053_changeSong(int encoder_change)
   return true;
 }
 
-void vs1053_togglePause()
+void vs1053_pause(bool pause)
 {
-  paused = !paused;
+  paused = pause;
 
   if (paused) {
     Serial.println("Pause");
