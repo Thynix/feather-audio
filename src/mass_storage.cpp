@@ -67,7 +67,7 @@ const uint8_t mass_storage_pin = 12;
 SAMDTimer ITimer(SELECTED_TIMER);
 volatile bool massStorageMode = false;
 
-const char* const sd_card_mode = "SD card";
+const char* const sd_card_mode = "MicroSD card";
 const int timer_init_error[] = {long_blink_ms, short_blink_ms, long_blink_ms, 0};
 
 Adafruit_USBD_MSC usb_msc;
@@ -119,7 +119,12 @@ bool mass_storage_button()
 void mass_storage_loop()
 {
   Watchdog.disable();
+  ITimer.detachInterrupt();
+
   display_text(booting, sd_card_mode);
+
+  // Regenerate the cache on next startup as the card may have been modified.
+  vs1053_clearSongCache();
 
   if (!mass_storage_begin(CARDCS)) {
     display_text("Mass storage failed", boot_error);

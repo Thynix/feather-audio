@@ -33,6 +33,8 @@ const uint8_t max_volume = 0;
 
 const uint8_t VS1053_RESET = -1;     // VS1053 reset pin (not used!)
 
+const char *const cacheFilename = "cache";
+
 // Feather ESP8266
 #if defined(ESP8266)
 const uint8_t VS1053_CS = 16;      // VS1053 chip select pin (output)
@@ -77,7 +79,7 @@ Adafruit_VS1053_FilePlayer musicPlayer =
 
 File file;
 
-const size_t volumeReadCount = 300;
+const size_t volumeReadCount = 600;
 std::vector<uint32_t> volumeReads(volumeReadCount);
 
 const int fileStackSize = 5;
@@ -92,9 +94,15 @@ bool paused = false;
 
 void populateFilenames(File);
 float readVolume();
+bool readCache();
+bool writeCache();
 
 bool vs1053_setup()
 {
+  static bool successful = false;
+  if (successful)
+    return true;
+
   if (!musicPlayer.begin()) {
     display_text("Failed to find VS105", boot_error);
     led_blinkCode(no_VS1053);
@@ -110,8 +118,16 @@ bool vs1053_setup()
   display_text("Patching         VS1053", booting);
   musicPlayer.applyPatch(plugin, pluginSize);
 
-  display_text("Finding songs", booting);
-  unsigned long load_start = millis();
+  // Don't initialize again.
+  successful = true;
+
+  return true;
+}
+
+void vs1053_importSongs()
+{
+  display_text("Import start", "load");
+
   auto root = SD.open("/");
   populateFilenames(root);
   root.close();
@@ -124,7 +140,7 @@ bool vs1053_setup()
   std::sort(filenames.begin(), filenames.end(), compareStrings);
 
   if (filenames.size() == 0) {
-    display_text("No songs found", boot_error);
+    display_text("No songs found", "no songs found");
     while (true) led_blinkCode(no_microsd);
   }
 
@@ -133,7 +149,7 @@ bool vs1053_setup()
   char buf[128] = {};
   display_names.reserve(filenames.size());
   for (size_t i = 0; i < filenames.size(); i++) {
-    snprintf(buf, sizeof(buf), "Loading song %u / %u", i + 1, filenames.size());
+    snprintf(buf, sizeof(buf), "Import song  %u / %u", i + 1, filenames.size());
     display_text(buf, booting);
 
     Serial.printf("%12s | ", filenames[i]);
@@ -169,29 +185,36 @@ bool vs1053_setup()
 
     Serial.println(display_names[i]);
   }
+}
 
+void vs1053_loadSongs()
+{
+  display_text("Finding songs", "load");
+
+  unsigned long load_start = millis();
+
+  // Try to read the cache, but fall back to re-importing.
+  if (!readCache()) {
+    vs1053_importSongs();
+    writeCache();
+  }
+
+  Serial.flush();
   Serial.print("Songs loaded in ");
   Serial.print(millis() - load_start);
   Serial.println(" ms");
 
-  // Wait for... settling? Without this serial is liable to disconnect with:
-  //     kernel: usb usb5-port2: disabled by hub (EMI?), re-enabling...
-  delay(100);
-
   // DREQ is on an interrupt pin, so use background audio playing
   if (!musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT)) {
-    Serial.println("Failed to set VS1053 interrupt");
-    display_text("VS1053 interrupts error", boot_error);
-    led_blinkCode(no_VS1053);
-    return false;
+    Serial.println("failed to set VS1053 interrupt");
+    display_text("failed to set VS1053 interrupt", "interrupts error");
+    while (true) led_blinkCode(no_VS1053);
   }
-
-  return true;
 }
 
 bool vs1053_loop()
 {
-  static int previous_display_volume = -1;
+  static int previous_display_volume;
   static unsigned long last_volume_change;
   const unsigned long volume_change_display_ms = 1000;
 
@@ -203,25 +226,18 @@ bool vs1053_loop()
   //uint8_t volume = (uint8_t) ((1.0f - readVolume()) * inaudible);
   // Reverse pot
   uint8_t volume = (uint8_t) (readVolume() * inaudible);
-
+  // Hardcode when pot not working
+  //uint8_t volume = (uint8_t) (0.3 * inaudible);
   // Only change volume setting if the displayed value is different.
-  // 0 is 100%; 160 is 0%.
+  // 100% volume is 0
+  // 0% volume is inaudible
   int display_volume = roundf(100 - (100.0f/inaudible)*volume);
   if (previous_display_volume != display_volume) {
-    // Ignore single-percentage changes when not already displaying volume.
-    // This means the minimum adjustment to start adjusting is 2.
-    // (With the exception of 0% and 100% as those have a wider stable range.)
-    if (start - last_volume_change >= volume_change_display_ms &&
-        abs(previous_display_volume - display_volume) == 1 &&
-        display_volume != 0 && display_volume != 100) {
-      //Serial.println("Ignoring volume flicker");
-    } else {
-      Serial.printf("Set volume %d\n", volume);
-      musicPlayer.setVolume(volume, volume);
+    Serial.printf("Volume %d%%: %d\n", display_volume, volume);
+    musicPlayer.setVolume(volume, volume);
 
-      previous_display_volume = display_volume;
-      last_volume_change = start;
-    }
+    previous_display_volume = display_volume;
+    last_volume_change = start;
   }
 
   bool display_updated = false;
@@ -249,7 +265,7 @@ bool vs1053_loop()
 
   // Advance to the next song upon completion.
   if (!paused && !musicPlayer.playingMusic)
-    vs1053_changeSong(-1);
+    vs1053_changeSong(1);
 
   return display_updated;
 }
@@ -393,4 +409,76 @@ accept_entry:
 
       entry.close();
   }
+}
+
+void vs1053_clearSongCache()
+{
+  SD.remove(cacheFilename);
+}
+
+bool readCache()
+{
+  auto cacheFile = SD.open(cacheFilename, FILE_READ);
+  if (!cacheFile) {
+    Serial.println("Failed to open cache file");
+    return false;
+  }
+
+  Serial.println("Loading cache");
+
+  while (cacheFile.available()) {
+    auto filename = cacheFile.readStringUntil('\n');
+    auto filenameBuf = (char*) malloc(filename.length() + 1);
+    strcpy(filenameBuf, filename.c_str());
+    filenames.push_back(filenameBuf);
+
+    auto displayName = cacheFile.readStringUntil('\n');
+    auto displayNameBuf = (char*) malloc(displayName.length() + 1);
+    strcpy(displayNameBuf, displayName.c_str());
+    display_names.push_back(displayNameBuf);
+
+    Serial.printf("%12s | ", filenameBuf);
+    Serial.println(displayNameBuf);
+  }
+
+  if (filenames.size() != display_names.size()) {
+    Serial.println("Cache mismatch: ");
+    Serial.print(filenames.size());
+    Serial.print(" | ");
+    Serial.println(display_names.size());
+
+    filenames.clear();
+    display_names.clear();
+
+    return false;
+  }
+
+  Serial.print("Loaded ");
+  Serial.print(filenames.size());
+  Serial.println(" songs");
+
+  cacheFile.close();
+  return true;
+}
+
+bool writeCache()
+{
+  auto cacheFile = SD.open(cacheFilename, FILE_WRITE);
+  if (!cacheFile) {
+    Serial.println("Failed to open cache file");
+    return false;
+  }
+
+  for (size_t i = 0; i < filenames.size(); i++) {
+    cacheFile.write(filenames[i]);
+    cacheFile.write('\n');
+    cacheFile.write(display_names[i]);
+    cacheFile.write('\n');
+  }
+
+  cacheFile.close();
+
+  Serial.println("Wrote cache");
+
+  return true;
 }

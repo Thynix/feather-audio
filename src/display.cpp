@@ -139,15 +139,18 @@ public:
 
 // Which font to use. Change to NULL for default 6x8 font.
 const GFXfont *font = &FreeSansBold9pt7b;
+//const GFXfont *font = NULL;
 const uint8_t text_size = 1;
+const uint8_t scroll_frame_count = 1;
 
-ScrollArea topLines(0, 48, font, 1, 1);
-ScrollArea bottomLine(48, 16, font, 1, 1);
+ScrollArea topLines(0, 48, font, text_size, scroll_frame_count);
+ScrollArea bottomLine(48, 16, font, text_size, scroll_frame_count);
 
 bool display_setup()
 {
-  // Wait for the OLED to power up
-  delay(250);
+  static bool successful = false;
+  if (successful)
+    return true;
 
   // Address 0x3C default
   if (!display.begin(0x3C, true)) {
@@ -157,6 +160,10 @@ bool display_setup()
 
   display.setRotation(1);
   display.setTextColor(SH110X_WHITE);
+  display.clearDisplay();
+
+  // Don't initialize again.
+  successful = true;
 
   return true;
 }

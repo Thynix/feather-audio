@@ -2,6 +2,9 @@
 #include <led.h>
 
 bool vs1053_setup();
+void vs1053_loadSongs();
+void vs1053_clearSongCache();
+
 // Returns whether the display was updated.
 bool vs1053_loop();
 

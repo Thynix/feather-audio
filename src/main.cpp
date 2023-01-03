@@ -9,7 +9,6 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <algorithm>
-#include <ArduinoTrace.h>
 
 // Updating the display is usually at or just under this duration.
 const unsigned long target_frametime_micros = 70000;
@@ -19,35 +18,41 @@ const int waiting_for_serial[] = {short_blink_ms, 0};
 
 void setup()
 {
+  auto start = micros();
   mass_storage_setup();
 
-  Serial.begin(115200);
+  Serial.begin(9600);
+
+  // This might not succeed, but it's worth a shot to have better startup feedback before serial.
+  display_setup();
+  display_text("Hello there", booting);
+
+  vs1053_setup();
 
 #if 0
   // Blink while waiting for serial connection
   if (!Serial) {
-    display_setup();
-    do {
-      display_text("Waiting for serial", booting);
-      led_blinkCode(waiting_for_serial);
-    } while (!Serial);
+    display_text("Waiting for    serial", "");
+
+    while (!Serial) led_blinkCode(waiting_for_serial);
   }
 
-  Serial.println("Starting up");
+  Serial.println("starting up");
 #endif
 
+  // First attempts didn't retry until success; try harder to make sure it's ready.
   while (!display_setup())
-    Serial.println("Display setup failed");
+    Serial.println("display setup failed");
 
-  display_text("", booting);
+  while (!vs1053_setup())
+    Serial.println("VS1053 setup failed");
+
+  vs1053_loadSongs();
 
   Wire.begin();
 
   while (!encoder_setup())
-    Serial.println("Cannot find encoder");
-
-  while (!vs1053_setup())
-    Serial.println("VS1053 setup failed");
+    Serial.println("cannot find encoder");
 
   // Enable watchdog before entering loop()
   int countdown_milliseconds = Watchdog.enable(4000);
@@ -55,7 +60,10 @@ void setup()
   Serial.print(countdown_milliseconds);
   Serial.println(" milliseconds");
 
-  Serial.println("Startup complete");
+  Serial.print("Startup completed in ");
+  Serial.print(micros() - start);
+  Serial.println(" microseconds");
+
   led_off();
   encoder_led_off();
 
@@ -88,16 +96,20 @@ void loop()
   }
 
   // Toggle pause on encoder button press.
+  // Ignore encoder movement while the knob switch is changing - the position
+  // can become unstable.
   if (encoder_togglePause()) {
     paused = !paused;
     vs1053_pause(paused);
-  } else if (!paused) {
+  } else {
     auto change = encoder_getChange();
-    if (change != 0)
+    if (!paused && change != 0)
       vs1053_changeSong(change);
   }
 
   bool display_updated = vs1053_loop();
+
+  Serial.flush();
 
   unsigned long end = millis();
   unsigned long frame_time = end - start;
@@ -119,11 +131,12 @@ void loop()
       if (idle_frame_times[i] > max_idle) max_idle = idle_frame_times[i];
     }
 
-    Serial.printf("Update duration: DISPLAY mean %02.1f ms, max %lu ms | IDLE %02.1f ms, max %lu ms \r\n",
-                  total / max((float)frame_time_index, 1.0f),
-                  max_display,
-                  idle_total / max((float)idle_frame_time_index, 1.0f),
-                  max_idle);
+    char buf[512];
+    snprintf(buf, sizeof(buf), "DISPLAY mean %02.1f ms, max %02lu ms | IDLE %02.1f ms, max %02lu ms \r\n",
+             total / max((float)frame_time_index, 1.0f),
+             max_display,
+             idle_total / max((float)idle_frame_time_index, 1.0f),
+             max_idle);
 
     last_frame_time_report = end;
 
