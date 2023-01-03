@@ -32,7 +32,7 @@ void setup()
 #if 0
   // Blink while waiting for serial connection
   if (!Serial) {
-    display_text("Waiting for    serial", "");
+    display_text("Waiting for      serial", "");
 
     while (!Serial) led_blinkCode(waiting_for_serial);
   }
@@ -61,8 +61,8 @@ void setup()
   Serial.println(" milliseconds");
 
   Serial.print("Startup completed in ");
-  Serial.print(micros() - start);
-  Serial.println(" microseconds");
+  Serial.print((micros() - start) / 1000);
+  Serial.println(" milliseconds");
 
   led_off();
   encoder_led_off();

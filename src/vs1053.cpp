@@ -202,7 +202,7 @@ void vs1053_loadSongs()
   Serial.flush();
   Serial.print("Songs loaded in ");
   Serial.print(millis() - load_start);
-  Serial.println(" ms");
+  Serial.println(" milliseconds");
 
   // DREQ is on an interrupt pin, so use background audio playing
   if (!musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT)) {
