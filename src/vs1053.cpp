@@ -272,40 +272,23 @@ bool vs1053_loop()
 
 bool vs1053_changeSong(int encoder_change)
 {
-  if (encoder_change < 0) {
-    Serial.printf("From %d next", selected_file_index);
-    do {
-      if ((size_t) selected_file_index >= filenames.size() - 1) {
-        selected_file_index = 0;
-      } else {
-        selected_file_index++;
-      }
+  Serial.print("Moving ");
+  Serial.print(encoder_change);
 
-      Serial.print(' ');
-      Serial.print(encoder_change);
-    } while (++encoder_change < 0);
-    Serial.printf(" to %d\n", selected_file_index);
-  } else if (encoder_change > 0) {
-    Serial.printf("From %d previous", selected_file_index);
-    do {
-      if (selected_file_index <= 0) {
-        selected_file_index = filenames.size() - 1;
-      } else {
-        selected_file_index--;
-      }
+  selected_file_index += encoder_change;
 
-      Serial.print(' ');
-      Serial.print(encoder_change);
-    } while (--encoder_change > 0);
-    Serial.printf(" to %d\n", selected_file_index);
+  // Wrap around playlist when negative.
+  while (selected_file_index < 0) {
+    selected_file_index += filenames.size();
   }
 
-  Serial.print("Filename: '");
-  Serial.print(filenames[selected_file_index]);
-  Serial.println("'");
-  Serial.print("Display name: '");
+  // Wrap around playlist when beyond its length.
+  selected_file_index = selected_file_index % filenames.size();
+
+  Serial.print(" to '");
   Serial.print(display_names[selected_file_index]);
   Serial.println("'");
+
   musicPlayer.stopPlaying();
 
   // Clear decodeTime() so elapsed time doesn't accumulate between songs.
