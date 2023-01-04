@@ -104,7 +104,7 @@ bool vs1053_setup()
     return true;
 
   if (!musicPlayer.begin()) {
-    display_text("Failed to find VS105", boot_error);
+    display_text("Failed to find VS1053", boot_error);
     led_blinkCode(no_VS1053);
     return false;
   }
@@ -124,9 +124,11 @@ bool vs1053_setup()
   return true;
 }
 
+const char *const importStatus = "Cache build";
+
 void vs1053_importSongs()
 {
-  display_text("Import start", "load");
+  display_text("Import start", importStatus);
 
   auto root = SD.open("/");
   populateFilenames(root);
@@ -140,7 +142,7 @@ void vs1053_importSongs()
   std::sort(filenames.begin(), filenames.end(), compareStrings);
 
   if (filenames.size() == 0) {
-    display_text("No songs found", "no songs found");
+    display_text("No songs found", boot_error);
     while (true) led_blinkCode(no_microsd);
   }
 
@@ -189,7 +191,7 @@ void vs1053_importSongs()
 
 void vs1053_loadSongs()
 {
-  display_text("Finding songs", "load");
+  display_text("Loading songs", booting);
 
   unsigned long load_start = millis();
 
@@ -207,7 +209,7 @@ void vs1053_loadSongs()
   // DREQ is on an interrupt pin, so use background audio playing
   if (!musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT)) {
     Serial.println("failed to set VS1053 interrupt");
-    display_text("failed to set VS1053 interrupt", "interrupts error");
+    display_text("VS1053 interrupt setup failed", boot_error);
     while (true) led_blinkCode(no_VS1053);
   }
 }
@@ -407,6 +409,7 @@ bool readCache()
     return false;
   }
 
+  display_text("Loading cache", booting);
   Serial.println("Loading cache");
 
   while (cacheFile.available()) {
@@ -435,10 +438,6 @@ bool readCache()
 
     return false;
   }
-
-  Serial.print("Loaded ");
-  Serial.print(filenames.size());
-  Serial.println(" songs");
 
   cacheFile.close();
   return true;

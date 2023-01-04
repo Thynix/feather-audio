@@ -37,12 +37,12 @@ void setup()
     while (!Serial) led_blinkCode(waiting_for_serial);
   }
 
-  Serial.println("starting up");
+  Serial.println("Starting up");
 #endif
 
   // First attempts didn't retry until success; try harder to make sure it's ready.
   while (!display_setup())
-    Serial.println("display setup failed");
+    Serial.println("Display setup failed");
 
   while (!vs1053_setup())
     Serial.println("VS1053 setup failed");
@@ -50,7 +50,7 @@ void setup()
   Wire.begin();
 
   while (!encoder_setup())
-    Serial.println("cannot find encoder");
+    Serial.println("Cannot find encoder");
 
   vs1053_loadSongs();
 
