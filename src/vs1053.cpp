@@ -196,13 +196,16 @@ void vs1053_loadSongs()
   unsigned long load_start = millis();
 
   // Try to read the cache, but fall back to re-importing.
+  bool usedCache = true;
   if (!readCache()) {
+    usedCache = false;
     vs1053_importSongs();
     writeCache();
   }
 
   Serial.flush();
-  Serial.print("Songs loaded in ");
+  Serial.print(filenames.size());
+  Serial.printf(" songs %s in ", usedCache ? "loaded from cache" : "imported");
   Serial.print(millis() - load_start);
   Serial.println(" milliseconds");
 
