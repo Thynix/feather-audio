@@ -5,8 +5,7 @@
 #include <led.h>
 #include <patching.h>
 
-#define MP3_ID3_TAGS_IMPLEMENTATION
-#include <mp3_id3_tags.h>
+#include <taglib.h>
 
 #include <Adafruit_VS1053.h>
 #include <Arduino.h>
