@@ -149,12 +149,34 @@ void vs1053_importSongs()
   // Load song tags
   // TODO: do this lazily? nah, it'd make things less responsive once it's running.
   char buf[128] = {};
+  int errors = 0;
   display_names.reserve(filenames.size());
   for (size_t i = 0; i < filenames.size(); i++) {
-    snprintf(buf, sizeof(buf), "Import song  %u / %u", i + 1, filenames.size());
-    display_text(buf, booting);
+    bool error = false;
+    if (strstr(display_names[i], "\n")) {
+      errors++;
+      error = true;
+    }
+
+    if (strstr(filenames[i], "\n"))  {
+      errors++;
+      error = true;
+    }
+
+    snprintf(buf, sizeof(buf), "Import song    %u / %u", i + 1, filenames.size());
+
+    // Append error count if relevant.
+    if (errors)
+      snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), " | %d errors", errors);
+
+    display_text(buf, importStatus);
 
     Serial.printf("%12s | ", filenames[i]);
+
+    if (error) {
+      Serial.println("error - name contains newlines");
+      continue;
+    }
 
     auto file = SD.open(filenames[i]);
     if (mp3_id3_file_has_tags(&file)) {
