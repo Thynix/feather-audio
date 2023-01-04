@@ -47,12 +47,12 @@ void setup()
   while (!vs1053_setup())
     Serial.println("VS1053 setup failed");
 
-  vs1053_loadSongs();
-
   Wire.begin();
 
   while (!encoder_setup())
     Serial.println("cannot find encoder");
+
+  vs1053_loadSongs();
 
   // Enable watchdog before entering loop()
   int countdown_milliseconds = Watchdog.enable(4000);
