@@ -88,11 +88,10 @@ void loop()
 
   // Switch to mass storage mode on button press. This is a separate mode so
   // that music playback isn't interrupted by mass storage CPU load.
-  // mass_storage_loop() does not return.
-  // TODO: reset on another button press?
-  if (massStorageMode) {
+  // mass_storage_mode() does not return; a second button press resets the board.
+  if (mass_storage_button()) {
     vs1053_pause(true);
-    mass_storage_loop();
+    mass_storage_mode();
   }
 
   // Toggle pause on encoder button press.
