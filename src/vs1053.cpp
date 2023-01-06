@@ -33,7 +33,7 @@ const uint8_t max_volume = 0;
 
 const uint8_t VS1053_RESET = -1;     // VS1053 reset pin (not used!)
 
-const char *const cacheFilename = "cache";
+const char *const cacheFilename = "cache/cache.txt";
 
 // Feather ESP8266
 #if defined(ESP8266)
@@ -384,6 +384,8 @@ void vs1053_clearSongCache()
 
 bool readCache()
 {
+  SD.mkdir("cache");
+
   auto cacheFile = SD.open(cacheFilename, FILE_READ);
   if (!cacheFile) {
     Serial.println("Failed to open cache file");
