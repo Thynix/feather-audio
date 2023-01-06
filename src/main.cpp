@@ -47,8 +47,6 @@ void setup()
   while (!vs1053_setup())
     Serial.println("VS1053 setup failed");
 
-  Wire.begin();
-
   while (!encoder_setup())
     Serial.println("Cannot find encoder");
 
