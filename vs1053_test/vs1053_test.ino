@@ -229,13 +229,8 @@ void loop() {
         next.update();
         pause.update();
 
-        if (next.falling()) {
-          Serial.println("Next");
-          break;
-        }
-
         // falling()/rising() always return false for buttons with a state function.
-        if (pause.edge() && !pause.read()) {
+        if (next.falling() || (pause.edge() && !pause.read())) {
           paused = !paused;
           Serial.print("Pause ");
           Serial.println(paused);
@@ -271,7 +266,8 @@ void loop() {
   }
 }
 
-void load(File dir) {
+void load(File dir)
+{
    while (true) {
      auto entry =  dir.openNextFile();
      if (!entry) {
