@@ -74,6 +74,11 @@ const uint8_t volume_pin = A2;
 
 #endif
 
+struct Song {
+  String filename;
+  String displayName;
+};
+
 Adafruit_VS1053_FilePlayer musicPlayer =
   Adafruit_VS1053_FilePlayer(VS1053_RESET, VS1053_CS, VS1053_DCS, VS1053_DREQ, CARDCS);
 
@@ -82,17 +87,13 @@ File file;
 const size_t volumeReadCount = 600;
 std::vector<uint32_t> volumeReads(volumeReadCount);
 
-const int fileStackSize = 5;
-File fileStack[fileStackSize] = {};
-std::vector<const char*> filenames;
-std::vector<const char*> display_names;
+std::vector<Song> songs;
 int selected_file_index = 0;
 
 unsigned long song_start_millis;
 unsigned long song_millis_paused;
 bool paused = false;
 
-void populateFilenames(File);
 float readVolume();
 bool readCache();
 bool writeCache();
@@ -128,42 +129,28 @@ const char *const importStatus = "Cache build";
 
 void vs1053_importSongs()
 {
+  char buf[512] = {};
+  int errors = 0;
+  int i = 0;
+
   display_text("Import start", importStatus);
 
   auto root = SD.open("/");
-  populateFilenames(root);
-  root.close();
 
-  struct {
-    bool operator()(const char* a, const char* b) { return strcmp(a, b) < 0; }
-  } compareStrings;
+  // Iterate root directory and load tags.
+  for (auto file = root.openNextFile(); file; file.close(), file = root.openNextFile()) {
+    if (file.isDirectory())
+      continue;
 
-  // Present songs in lexicographic filename order
-  std::sort(filenames.begin(), filenames.end(), compareStrings);
+    i++;
 
-  if (filenames.size() == 0) {
-    display_text("No songs found", boot_error);
-    while (true) led_blinkCode(no_microsd);
-  }
-
-  // Load song tags
-  // TODO: do this lazily? nah, it'd make things less responsive once it's running.
-  char buf[128] = {};
-  int errors = 0;
-  display_names.reserve(filenames.size());
-  for (size_t i = 0; i < filenames.size(); i++) {
     bool error = false;
-    if (strstr(display_names[i], "\n")) {
+    if (strstr(file.name(), "\n"))  {
       errors++;
       error = true;
     }
 
-    if (strstr(filenames[i], "\n"))  {
-      errors++;
-      error = true;
-    }
-
-    snprintf(buf, sizeof(buf), "Import song    %u / %u", i + 1, filenames.size());
+    snprintf(buf, sizeof(buf), "Import song     %u", i + 1);
 
     // Append error count if relevant.
     if (errors)
@@ -171,44 +158,49 @@ void vs1053_importSongs()
 
     display_text(buf, importStatus);
 
-    Serial.printf("%12s | ", filenames[i]);
+    Serial.printf("%12s | ", file.name());
 
     if (error) {
       Serial.println("error - name contains newlines");
       continue;
     }
 
-    auto file = SD.open(filenames[i]);
     if (mp3_id3_file_has_tags(&file)) {
       const char* title = mp3_id3_file_read_tag(&file, MP3_ID3_TAG_TITLE);
       const char* album = mp3_id3_file_read_tag(&file, MP3_ID3_TAG_ALBUM);
       const char* artist = mp3_id3_file_read_tag(&file, MP3_ID3_TAG_ARTIST);
-      const size_t display_name_len = 512 + 1;
-      char *display_name = (char*)malloc(display_name_len);
 
       // Songs are liable to not have an album set if manually tagged.
       if (strlen(album)) {
-        snprintf(display_name, display_name_len, "%s by %s in %s", title, artist, album);
+        snprintf(buf, sizeof(buf), "%s by %s in %s", title, artist, album);
       } else {
-        snprintf(display_name, display_name_len, "%s by %s", title, artist);
+        snprintf(buf, sizeof(buf), "%s by %s", title, artist);
       }
 
       free((void*)title);
       free((void*)artist);
-      display_names[i] = display_name;
     } else {
       // Remove extension from filename in the absence of tags
       // +1 for null terminator; -4 for ".mp3" or similar
-      size_t len = strlen(filenames[i]) + 1 - 4;
-      char *display_name = (char*) malloc(len);
-      strncpy(display_name, filenames[i], len);
-      display_name[len - 1] = '\0';
-      display_names[i] = display_name;
+      size_t len = strlen(file.name()) + 1 - 4;
+      strncpy(buf, file.name(), len);
+      buf[len - 1] = '\0';
     }
-    file.close();
 
-    Serial.println(display_names[i]);
+    songs.push_back(Song{
+      .filename = file.name(),
+      .displayName = buf,
+    });
   }
+
+  root.close();
+
+  struct {
+    bool operator()(const Song &a, const Song &b) { return a.filename < b.filename; }
+  } compareSongs;
+
+  // Present songs in lexicographic filename order
+  std::sort(songs.begin(), songs.end(), compareSongs);
 }
 
 void vs1053_loadSongs()
@@ -226,7 +218,7 @@ void vs1053_loadSongs()
   }
 
   Serial.flush();
-  Serial.print(filenames.size());
+  Serial.print(songs.size());
   Serial.printf(" songs %s in ", usedCache ? "loaded from cache" : "imported");
   Serial.print(millis() - load_start);
   Serial.println(" milliseconds");
@@ -246,6 +238,8 @@ bool vs1053_loop()
   const unsigned long volume_change_display_ms = 1000;
 
   unsigned long start = millis();
+
+  auto displayName = songs[selected_file_index].displayName.c_str();
 
   // Because higher values given to musicPlayer.setVolume() are quieter, so
   // invert scaled ADC. Low ADC numbers give high volume values to be quiet.
@@ -273,9 +267,9 @@ bool vs1053_loop()
       // Pad with two spaces to leave room for "100%"
       snprintf(buf, sizeof(buf), "    Vol %d%%", display_volume);
 
-      display_updated = display_text(display_names[selected_file_index], buf);
+      display_updated = display_text(displayName, buf);
   } else if (paused) {
-    display_updated = display_text(display_names[selected_file_index],
+    display_updated = display_text(displayName,
                                   "    Paused");
   } else {
     auto seconds_played = musicPlayer.decodeTime();
@@ -285,9 +279,9 @@ bool vs1053_loop()
     // Playtime in minutes:seconds song number/song count
     snprintf(buf, sizeof(buf), "%d:%02d %02d/%u",
              seconds_played / 60, seconds_played % 60,
-             selected_file_index + 1, filenames.size());
+             selected_file_index + 1, songs.size());
 
-    display_updated = display_text(display_names[selected_file_index], buf);
+    display_updated = display_text(displayName, buf);
   }
 
   // Advance to the next song upon completion.
@@ -306,14 +300,16 @@ bool vs1053_changeSong(int encoder_change)
 
   // Wrap around playlist when negative.
   while (selected_file_index < 0) {
-    selected_file_index += filenames.size();
+    selected_file_index += songs.size();
   }
 
   // Wrap around playlist when beyond its length.
-  selected_file_index = selected_file_index % filenames.size();
+  selected_file_index = selected_file_index % songs.size();
+
+  auto selectedSong = songs[selected_file_index];
 
   Serial.print(" to '");
-  Serial.print(display_names[selected_file_index]);
+  Serial.print(selectedSong.displayName);
   Serial.println("'");
 
   musicPlayer.stopPlaying();
@@ -321,11 +317,11 @@ bool vs1053_changeSong(int encoder_change)
   // Clear decodeTime() so elapsed time doesn't accumulate between songs.
   musicPlayer.softReset();
 
-  if (!musicPlayer.startPlayingFile(filenames[selected_file_index])) {
+  if (!musicPlayer.startPlayingFile(selectedSong.filename.c_str())) {
     musicPlayer.stopPlaying();
 
     for (int i = 0; i < 128; i++) {
-      display_text(display_names[selected_file_index], "start failed");
+      display_text(selectedSong.displayName.c_str(), "start failed");
     }
     return false;
   }
@@ -381,46 +377,6 @@ float readVolume()
   return scaledADC;
 }
 
-void populateFilenames(File dir)
-{
-    while(true) {
-      File entry =  dir.openNextFile();
-      if (!entry) {
-        // no more files
-        break;
-      }
-
-      // Don't recurse - only load top-level files.
-      if (entry.isDirectory()) {
-        //populateFilenames(entry);
-        entry.close();
-        continue;
-      }
-
-      char nameBuf[128] = {};
-      strcpy(nameBuf, entry.name());
-
-      // Check whether it's a supported extension. (MP3 is best supported.)
-      for (size_t i = 0; i < COUNT_OF(accepted_extensions); i++) {
-        if (strstr(nameBuf, accepted_extensions[i])) {
-          goto accept_entry;
-        }
-      }
-
-      // Ignore it if it doesn't have a usable extension.
-      entry.close();
-      continue;
-
-accept_entry:
-      // Duplicate so the entry can be closed.
-      char *name = (char*) malloc(strlen(nameBuf) + 1);
-      strcpy(name, nameBuf);
-      filenames.push_back(name);
-
-      entry.close();
-  }
-}
-
 void vs1053_clearSongCache()
 {
   SD.remove(cacheFilename);
@@ -439,29 +395,15 @@ bool readCache()
 
   while (cacheFile.available()) {
     auto filename = cacheFile.readStringUntil('\n');
-    auto filenameBuf = (char*) malloc(filename.length() + 1);
-    strcpy(filenameBuf, filename.c_str());
-    filenames.push_back(filenameBuf);
-
     auto displayName = cacheFile.readStringUntil('\n');
-    auto displayNameBuf = (char*) malloc(displayName.length() + 1);
-    strcpy(displayNameBuf, displayName.c_str());
-    display_names.push_back(displayNameBuf);
 
-    Serial.printf("%12s | ", filenameBuf);
-    Serial.println(displayNameBuf);
-  }
+    Serial.printf("%12s | ", filename);
+    Serial.println(displayName);
 
-  if (filenames.size() != display_names.size()) {
-    Serial.println("Cache mismatch: ");
-    Serial.print(filenames.size());
-    Serial.print(" | ");
-    Serial.println(display_names.size());
-
-    filenames.clear();
-    display_names.clear();
-
-    return false;
+    songs.push_back(Song{
+      .filename = filename,
+      .displayName = displayName,
+    });
   }
 
   cacheFile.close();
@@ -476,10 +418,10 @@ bool writeCache()
     return false;
   }
 
-  for (size_t i = 0; i < filenames.size(); i++) {
-    cacheFile.write(filenames[i]);
+  for (auto song : songs) {
+    cacheFile.write(song.filename.c_str());
     cacheFile.write('\n');
-    cacheFile.write(display_names[i]);
+    cacheFile.write(song.displayName.c_str());
     cacheFile.write('\n');
   }
 
