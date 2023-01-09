@@ -239,16 +239,17 @@ bool vs1053_loop()
 
   unsigned long start = millis();
 
-  auto displayName = songs[selected_file_index].displayName.c_str();
+  const auto displayName = songs[selected_file_index].displayName.c_str();
 
   // Because higher values given to musicPlayer.setVolume() are quieter, so
   // invert scaled ADC. Low ADC numbers give high volume values to be quiet.
   // Pot
-  //uint8_t volume = (uint8_t) ((1.0f - readVolume()) * inaudible);
+  uint8_t volume = (uint8_t) ((1.0f - readVolume()) * inaudible);
   // Reverse pot
-  uint8_t volume = (uint8_t) (readVolume() * inaudible);
-  // Hardcode when pot not working
+  //uint8_t volume = (uint8_t) (readVolume() * inaudible);
+  // Hardcode when pot not connected.
   //uint8_t volume = (uint8_t) (0.3 * inaudible);
+
   // Only change volume setting if the displayed value is different.
   // 100% volume is 0
   // 0% volume is inaudible
@@ -364,12 +365,15 @@ float readVolume()
   std::sort(volumeReads.begin(), volumeReads.end(), compareReads);
   uint32_t medianRead = volumeReads[volumeReads.size() / 2];
 
+  // Discard noise from lowest two bits.
+  int truncatedRead = medianRead >> 2;
+
   // Linear potentiometer - take the log to match volume perception.
-  // ADC max is 1023, and natural log of 1023 = 6.93049
-  //float scaledADC = log(max(1023 - medianRead, 1u)) / 6.93049;
+  // ADC max is 1023, truncated to 8 bits, and natural log of 255 = 5.541263545158426
+  //float scaledADC = log(max(255 - truncatedRead, 1u)) / 5.541263545158426;
 
   // Audio potentiometer - no scaling.
-  float scaledADC = medianRead / 1023.0;
+  float scaledADC = truncatedRead / 255.0;
 
   if (scaledADC < 0.0f) scaledADC = 0.0f;
   if (scaledADC > 1.0f) scaledADC = 1.0f;
