@@ -233,7 +233,7 @@ void vs1053_loadSongs()
 
 bool vs1053_loop()
 {
-  static int previous_display_volume;
+  static int previous_display_volume = -1;
   static unsigned long last_volume_change;
   const unsigned long volume_change_display_ms = 1000;
 
@@ -365,15 +365,15 @@ float readVolume()
   std::sort(volumeReads.begin(), volumeReads.end(), compareReads);
   uint32_t medianRead = volumeReads[volumeReads.size() / 2];
 
-  // Discard noise from lowest two bits.
-  int truncatedRead = medianRead >> 2;
+  // Discard noise; leave 7 bits to allow meaningful percentage.
+  int truncatedRead = medianRead >> 3;
 
   // Linear potentiometer - take the log to match volume perception.
-  // ADC max is 1023, truncated to 8 bits, and natural log of 255 = 5.541263545158426
-  //float scaledADC = log(max(255 - truncatedRead, 1u)) / 5.541263545158426;
+  // ADC read is truncated to a maximum of 127, and natural log of 127 = 4.844187086458591
+  //float scaledADC = log(max(127 - truncatedRead, 1u)) / 4.844187086458591;
 
   // Audio potentiometer - no scaling.
-  float scaledADC = truncatedRead / 255.0;
+  float scaledADC = truncatedRead / 127.0;
 
   if (scaledADC < 0.0f) scaledADC = 0.0f;
   if (scaledADC > 1.0f) scaledADC = 1.0f;
